@@ -1,0 +1,31 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: thesis-cluster
+nodes:
+  # The Control Plane (Kubernetes Brain)
+  - role: control-plane
+
+  # Node 1: CPU Optimized
+  - role: worker
+    labels:
+      node-type: CPU_OPT
+      # Logical constraints for your Python scheduler to read
+      thesis.capacity/cpu: "4.0"
+      thesis.capacity/memory: "1024" # 1GB RAM
+      thesis.capacity/io: "100"
+
+  # Node 2: Memory Optimized
+  - role: worker
+    labels:
+      node-type: MEM_OPT
+      thesis.capacity/cpu: "1.0"
+      thesis.capacity/memory: "4096" # 4GB RAM
+      thesis.capacity/io: "100"
+
+  # Node 3: I/O Optimized
+  - role: worker
+    labels:
+      node-type: IO_OPT
+      thesis.capacity/cpu: "2.0"
+      thesis.capacity/memory: "2048" # 2GB RAM
+      thesis.capacity/io: "1000"     # High IO rating

@@ -1,0 +1,43 @@
+{
+    "workflow_template_id": "mac-mini-pipeline-v1",
+    "name": "Local Constrained Pipeline",
+    "workflow_class": "BATCH",
+    "default_priority": 2,
+    "tasks": {
+      "task-io": {
+        "task_class": "IO_BOUND",
+        "cpu_request": 0.5,
+        "memory_request": 100,
+        "image_name": "thesis-io-worker:latest",
+        "compatible_node_types": ["IO_OPT", "GENERAL"]
+      },
+      "task-mem": {
+        "task_class": "MEMORY_BOUND",
+        "cpu_request": 0.5,
+        "memory_request": 300,
+        "image_name": "thesis-mem-worker:latest",
+        "compatible_node_types": ["MEM_OPT", "GENERAL"]
+      },
+      "task-cpu": {
+        "task_class": "CPU_BOUND",
+        "cpu_request": 1.0,
+        "memory_request": 100,
+        "image_name": "thesis-cpu-worker:latest",
+        "compatible_node_types": ["CPU_OPT", "GENERAL"]
+      }
+    },
+    "edges": [
+      {
+        "parent_task_id": "task-io",
+        "child_task_id": "task-mem",
+        "dependency_type": "DATA",
+        "data_field_names": ["generated_file_path"]
+      },
+      {
+        "parent_task_id": "task-mem",
+        "child_task_id": "task-cpu",
+        "dependency_type": "DATA",
+        "data_field_names": ["processed_array_size"]
+      }
+    ]
+  }

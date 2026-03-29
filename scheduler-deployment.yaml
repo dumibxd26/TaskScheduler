@@ -1,0 +1,62 @@
+---
+# 1. Create a dedicated Service Account for your Brain
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: thesis-scheduler-sa
+  namespace: default
+
+---
+# 2. Give it permissions to watch Pods, read Nodes, and create Bindings
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: thesis-scheduler-role
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+- apiGroups: [""]
+  resources: ["pods/binding"]
+  verbs: ["create"]
+
+---
+# 3. Bind the Role to the Service Account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: thesis-scheduler-role-binding
+subjects:
+- kind: ServiceAccount
+  name: thesis-scheduler-sa
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: thesis-scheduler-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# 4. Deploy the Brain!
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thesis-scheduler
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thesis-scheduler
+  template:
+    metadata:
+      labels:
+        app: thesis-scheduler
+    spec:
+      serviceAccountName: thesis-scheduler-sa # Use our God Mode account
+      containers:
+      - name: scheduler
+        image: thesis-scheduler:latest
+        imagePullPolicy: Never # Forces K8s to use the local image we loaded

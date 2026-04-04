@@ -1,4 +1,5 @@
 import time
+import json
 from kubernetes import client, config
 from models.enums import TaskClass, NodeType, TaskState, PriorityClass, WorkflowClass, DependencyType, WorkflowState
 from models.cluster import Node, ClusterScenario
@@ -6,127 +7,212 @@ from models.workload import WorkflowTemplate, TaskTemplate, WorkflowInstance, Ta
 from services.scheduler import ProfileStore, PlacementAlgorithm, WorkflowSchedulerRunner
 from services.workflow_manager import ReadinessResolver
 from services.observer import ExecutionObserver
+from services.data_manager import FileStoreDataManager
 
-def create_k8s_pod(v1_api, task_name, node_name, cpu_req, mem_req):
-    """Physically creates the Pod in your local K8s cluster."""
+NAMESPACE = "default"
+
+
+def create_k8s_pod(v1_api, pod_name, node_name, image_name, command, args,
+                   cpu_req, mem_req, env_vars: dict = None):
+    """Creates a Pod pinned to a specific node, with optional env vars injected."""
+    env = [client.V1EnvVar(name=k, value=str(v)) for k, v in (env_vars or {}).items()]
+
     pod = client.V1Pod(
-        metadata=client.V1ObjectMeta(name=task_name),
+        metadata=client.V1ObjectMeta(name=pod_name),
         spec=client.V1PodSpec(
             containers=[
                 client.V1Container(
                     name="worker",
-                    image="alpine",  # Tiny, instant-download linux image
-                    # Simulate work: wait 3 seconds and exit successfully
-                    command=["/bin/sh", "-c", "echo 'Starting thesis task...'; sleep 3; echo 'Done!'"],
+                    image=image_name,
+                    image_pull_policy="Never",   # use the locally loaded image
+                    command=command or None,
+                    args=args or None,
+                    env=env or None,
                     resources=client.V1ResourceRequirements(
                         requests={"cpu": str(cpu_req), "memory": f"{int(mem_req)}Mi"},
-                        limits={"cpu": str(cpu_req), "memory": f"{int(mem_req)}Mi"}
-                    )
+                        limits={"cpu": str(cpu_req), "memory": f"{int(mem_req)}Mi"},
+                    ),
                 )
             ],
-            node_name=node_name,  # <--- YOUR ALGORITHM'S DECISION GOES HERE
-            restart_policy="Never"
-        )
+            node_name=node_name,      # scheduler decision hard-pinned here
+            restart_policy="Never",
+        ),
     )
-    
-    print(f"[K8S API] Submitting Pod '{task_name}' to physical node '{node_name}'...")
-    v1_api.create_namespaced_pod(namespace="default", body=pod)
+    print(f"[K8S] Submitting pod '{pod_name}' -> node '{node_name}'")
+    v1_api.create_namespaced_pod(namespace=NAMESPACE, body=pod)
 
-def wait_for_pod_completion(v1_api, task_name) -> float:
-    """Watches K8s until the Pod finishes, returning the actual runtime."""
-    print(f"[K8S API] Waiting for '{task_name}' to finish...")
-    start_time = time.time()
-    
+
+
+def wait_for_pod_completion(v1_api, pod_name) -> float:
+    """Polls K8s until the pod Succeeded/Failed; returns wall-clock runtime in seconds."""
+    print(f"[K8S] Waiting for '{pod_name}' ...")
+    t0 = time.time()
     while True:
-        pod = v1_api.read_namespaced_pod_status(name=task_name, namespace="default")
-        phase = pod.status.phase
-        
+        phase = v1_api.read_namespaced_pod_status(
+            name=pod_name, namespace=NAMESPACE
+        ).status.phase
         if phase == "Succeeded":
-            runtime = time.time() - start_time
-            print(f"[K8S API] Pod '{task_name}' succeeded in {runtime:.2f} seconds!")
-            return runtime
-        elif phase == "Failed":
-            raise RuntimeError(f"Pod {task_name} failed!")
-            
-        time.sleep(1) # Check again in 1 second
+            rt = time.time() - t0
+            print(f"[K8S] '{pod_name}' succeeded in {rt:.2f}s")
+            return rt
+        if phase == "Failed":
+            raise RuntimeError(f"Pod '{pod_name}' failed!")
+        time.sleep(1)
+
+
+def extract_task_output(v1_api, pod_name) -> dict:
+    """
+    Reads pod logs and parses the __TS_OUTPUT__=<json> line printed by each task.
+    Returns the parsed dict, or {} if not found.
+    """
+    try:
+        logs = v1_api.read_namespaced_pod_log(name=pod_name, namespace=NAMESPACE)
+        for line in logs.splitlines():
+            if line.startswith("__TS_OUTPUT__="):
+                return json.loads(line[len("__TS_OUTPUT__="):])
+    except Exception as e:
+        print(f"[WARN] Could not read logs for '{pod_name}': {e}")
+    return {}
+
 
 if __name__ == "__main__":
     print("=== CONNECTING TO KUBERNETES ===")
-    config.load_kube_config() # Loads your ~/.kube/config (connects to 'kind')
+    config.load_kube_config()
     v1 = client.CoreV1Api()
-    
-    # 1. Map K8s nodes to your logical models
-    # Note: Replace these string names with the exact names from `kubectl get nodes`!
-    k8s_node_cpu = "thesis-cluster-worker"  # Adjust if your kind node is named differently
-    k8s_node_mem = "thesis-cluster-worker2"
-    k8s_node_io  = "thesis-cluster-worker3"
-    
+
+    # Node names must match kubeadmConfigPatches in kind-cluster.yaml
+    k8s_node_cpu = "ts-node-cpu"
+    k8s_node_mem = "ts-node-mem"
+    k8s_node_io  = "ts-node-io"
+
     cluster = ClusterScenario(
-        scenario_id="local-k8s", name="Real K8s Cluster", description="Running on Mac",
+        scenario_id="local-k8s", name="Real K8s Cluster", description="Mac Mini kind cluster",
         nodes=[
             Node(k8s_node_cpu, NodeType.CPU_OPT, 4.0, 1024.0, 4.0, 1024.0),
             Node(k8s_node_mem, NodeType.MEM_OPT, 1.0, 4096.0, 1.0, 4096.0),
-            Node(k8s_node_io,  NodeType.IO_OPT,  2.0, 2048.0, 2.0, 2048.0)
-        ]
+            Node(k8s_node_io,  NodeType.IO_OPT,  2.0, 2048.0, 2.0, 2048.0),
+        ],
     )
 
-    # 2. Setup your exact same DAG
+    # DAG: IO -> MEM -> CPU, with metadata flowing between steps via stdout logs
     template = WorkflowTemplate(
-        workflow_template_id="real-k8s-pipeline", name="K8s Pipeline",
-        workflow_class=WorkflowClass.BATCH, default_priority=PriorityClass.NORMAL, default_preemptable=True,
+        workflow_template_id="real-k8s-pipeline",
+        name="K8s Real Worker Pipeline",
+        workflow_class=WorkflowClass.BATCH,
+        default_priority=PriorityClass.NORMAL,
+        default_preemptable=True,
         tasks={
-            "task-io": TaskTemplate("task-io", "IO Job", TaskClass.IO_BOUND, 0.1, 50.0, "alpine", [NodeType.IO_OPT]),
-            "task-mem": TaskTemplate("task-mem", "Mem Job", TaskClass.MEMORY_BOUND, 0.1, 50.0, "alpine", [NodeType.MEM_OPT]),
-            "task-cpu": TaskTemplate("task-cpu", "CPU Job", TaskClass.CPU_BOUND, 0.1, 50.0, "alpine", [NodeType.CPU_OPT])
+            "task-io": TaskTemplate(
+                "task-io", "IO Job", TaskClass.IO_BOUND,
+                cpu_request=0.2, memory_request=100.0,
+                image_name="ts-task-io:v1",
+                compatible_node_types=[NodeType.IO_OPT, NodeType.CPU_OPT, NodeType.MEM_OPT],
+                min_cores=1, max_cores=1,
+            ),
+            "task-mem": TaskTemplate(
+                "task-mem", "Mem Job", TaskClass.MEMORY_BOUND,
+                cpu_request=0.2, memory_request=250.0,
+                image_name="ts-task-mem:v1",
+                compatible_node_types=[NodeType.MEM_OPT, NodeType.CPU_OPT, NodeType.IO_OPT],
+                min_cores=1, max_cores=1,
+            ),
+            "task-cpu": TaskTemplate(
+                "task-cpu", "CPU Job", TaskClass.CPU_BOUND,
+                cpu_request=0.5, memory_request=100.0,
+                image_name="ts-task-cpu:v1",
+                compatible_node_types=[NodeType.CPU_OPT, NodeType.MEM_OPT, NodeType.IO_OPT],
+                min_cores=1, max_cores=None,  # scales with cores
+            ),
         },
         edges=[
-            DependencyEdge("task-io", "task-mem", DependencyType.EXECUTION),
-            DependencyEdge("task-mem", "task-cpu", DependencyType.EXECUTION)
-        ]
+            DependencyEdge("task-io",  "task-mem", DependencyType.DATA, ["generated_file_path"]),
+            DependencyEdge("task-mem", "task-cpu", DependencyType.DATA, ["processed_array_size"]),
+        ],
     )
 
+    wf_id = "k8s-run-001"
     my_workflow = WorkflowInstance(
-        workflow_instance_id="k8s-run-001", workflow_template_id="real-k8s-pipeline",
-        workflow_class=WorkflowClass.BATCH, priority=PriorityClass.NORMAL, preemptable=False,
+        workflow_instance_id=wf_id,
+        workflow_template_id="real-k8s-pipeline",
+        workflow_class=WorkflowClass.BATCH,
+        priority=PriorityClass.NORMAL,
+        preemptable=False,
         task_instances={
-            "task-io": TaskInstance("inst-io", "k8s-run-001", "task-io"),
-            "task-mem": TaskInstance("inst-mem", "k8s-run-001", "task-mem"),
-            "task-cpu": TaskInstance("inst-cpu", "k8s-run-001", "task-cpu")
-        }
+            "task-io":  TaskInstance("inst-io",  wf_id, "task-io"),
+            "task-mem": TaskInstance("inst-mem", wf_id, "task-mem"),
+            "task-cpu": TaskInstance("inst-cpu", wf_id, "task-cpu"),
+        },
     )
 
-    # 3. Initialize Services
-    store = ProfileStore()
-    algo = PlacementAlgorithm()
-    runner = WorkflowSchedulerRunner(store, algo)
+    store    = ProfileStore()
+    algo     = PlacementAlgorithm(store)
+    runner   = WorkflowSchedulerRunner(store, algo)
     resolver = ReadinessResolver()
     observer = ExecutionObserver(store)
+    data_mgr = FileStoreDataManager()
 
+    data_mgr.provision_shared_workspace(wf_id)
     my_workflow.state = WorkflowState.ADMITTED
 
-    # 4. The Live K8s Loop
+    print(f"\n=== STARTING WORKFLOW {wf_id} ===\n")
+
     while my_workflow.state != WorkflowState.FINISHED:
         ready_tasks = resolver.get_ready_tasks(my_workflow, template)
-        
+
         for task in ready_tasks:
-            task_template = template.tasks[task.task_template_id]
-            
-            # THE BRAIN MAKES THE DECISION
-            chosen_node = runner.schedule_task(task, task_template, cluster)
-            
-            # THE HANDS EXECUTE THE DECISION IN K8S
-            # We add a timestamp to the pod name so K8s doesn't complain about duplicates if you run this twice
-            k8s_pod_name = f"{task.task_instance_id}-{int(time.time())}"
-            create_k8s_pod(v1, k8s_pod_name, chosen_node.node_id, task_template.cpu_request, task_template.memory_request)
+            task_tmpl = template.tasks[task.task_template_id]
+
+            # 1. Collect env vars from parent outputs saved in the file store
+            parent_edges = [e for e in template.edges if e.child_task_id == task.task_template_id]
+            env_vars = {}
+            parent_node_ids = []
+            for edge in parent_edges:
+                # Track which nodes parent tasks ran on (for data locality scoring)
+                parent_task = my_workflow.task_instances.get(edge.parent_task_id)
+                if parent_task and parent_task.assigned_node_id:
+                    parent_node_ids.append(parent_task.assigned_node_id)
+                if edge.dependency_type == DependencyType.DATA and edge.data_field_names:
+                    inputs = data_mgr.get_inputs_for_task(wf_id, task.task_template_id, edge.data_field_names)
+                    env_vars.update({k: str(v) for k, v in inputs.items() if v is not None})
+
+            # 2. Scheduler picks the best node (passes parent node IDs for data locality)
+            chosen_node = runner.schedule_task(task, task_tmpl, cluster, parent_node_ids)
+
+            # 3. Submit real pod to K8s (node hard-pinned by scheduler decision)
+            pod_name = f"{task.task_instance_id}-{int(time.time())}"
+            task.start_time = time.time()
+            task.assigned_node_id = chosen_node.node_id
+            create_k8s_pod(
+                v1, pod_name, chosen_node.node_id,
+                task_tmpl.image_name, task_tmpl.command, task_tmpl.args,
+                task_tmpl.cpu_request, task_tmpl.memory_request,
+                env_vars=env_vars,
+            )
             task.state = TaskState.RUNNING
-            
-            # WAIT FOR K8S TO FINISH
-            actual_runtime = wait_for_pod_completion(v1, k8s_pod_name)
-            
-            # LEARN FROM REALITY
-            observer.record_task_completion(task, actual_runtime=actual_runtime, actual_startup=1.0)
-            
-        # Check if done
+
+            # 4. Block until pod completes
+            actual_runtime = wait_for_pod_completion(v1, pod_name)
+
+            # 5. Unregister task from node tracker (it's done)
+            chosen_node.unregister_task(task.task_instance_id)
+
+            # 6. Extract __TS_OUTPUT__ from logs and persist for downstream tasks
+            output = extract_task_output(v1, pod_name)
+            if output:
+                data_mgr.save_small_output(wf_id, task.task_instance_id, output)
+                print(f"[DATA] Saved output for '{task.task_instance_id}': {output}")
+
+            # 7. Update the learning profile
+            observer.record_task_completion(
+                task, actual_runtime=actual_runtime, actual_startup=1.0,
+                node_id=chosen_node.node_id, node_type=chosen_node.node_type,
+                node_cpu_at_start=chosen_node.cpu_usage_ratio,
+                node_memory_at_start=chosen_node.memory_usage_ratio,
+            )
+
         if all(t.state == TaskState.FINISHED for t in my_workflow.task_instances.values()):
             my_workflow.state = WorkflowState.FINISHED
-            print("\n=== K8S WORKFLOW FINISHED SUCESSFULLY ===")
+            print(f"\n=== WORKFLOW {wf_id} COMPLETE ===")
+            break
+
+        time.sleep(1)  # brief pause before next DAG resolution tick

@@ -6,7 +6,7 @@ from services.scheduler import ProfileStore, PlacementAlgorithm, WorkflowSchedul
 from services.workflow_manager import ReadinessResolver
 from services.queue_manager import QueueManager
 from services.observer import ExecutionObserver
-from engine import ThesisEngine
+from engine import SchedulerEngine
 
 def setup_simulation():
     # 1. Create your Mac Mini "Nodes"
@@ -38,18 +38,18 @@ def setup_simulation():
 
 # --- THE STARTER BUTTON ---
 if __name__ == "__main__":
-    print("=== STARTING THESIS ENGINE SIMULATION ===")
+    print("=== STARTING TASK SCHEDULER SIMULATION ===")
     
     # 1. Initialize all your services
     cluster, templates = setup_simulation()
     store = ProfileStore()
-    algo = PlacementAlgorithm()
+    algo = PlacementAlgorithm(store)
     runner = WorkflowSchedulerRunner(store, algo)
     resolver = ReadinessResolver()
     queue = QueueManager()
     observer = ExecutionObserver(store)
     
-    engine = ThesisEngine(queue, resolver, runner, templates)
+    engine = SchedulerEngine(queue, resolver, runner, templates)
 
     # 2. Simulate an external service submitting a workflow!
     my_workflow = WorkflowInstance(
@@ -94,7 +94,14 @@ if __name__ == "__main__":
             time.sleep(1) # Dramatic pause
             
             # The Observer records it and marks it FINISHED
-            observer.record_task_completion(finished_task, actual_runtime=3.0, actual_startup=0.5)
+            node_type = cluster.nodes[0].node_type  # fallback; real node_type from task.assigned_node_id
+            if finished_task.assigned_node_id:
+                matched = next((n for n in cluster.nodes if n.node_id == finished_task.assigned_node_id), None)
+                if matched:
+                    node_type = matched.node_type
+            observer.record_task_completion(finished_task, actual_runtime=3.0, actual_startup=0.5,
+                                            node_id=finished_task.assigned_node_id,
+                                            node_type=node_type)
             
             # Update the workflow state if all tasks are done
             parent_wf = queue.admitted_workflows.get(finished_task.workflow_instance_id)

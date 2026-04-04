@@ -24,6 +24,12 @@ class TaskTemplate:
     memory_request: float
     image_name: str
     compatible_node_types: List[NodeType]
+
+    # Core parallelism requirements
+    # min_cores: minimum cores needed to run at all
+    # max_cores: cores beyond which there's no benefit (None = "the more the better")
+    min_cores: int = 1
+    max_cores: Optional[int] = 1  # Default: single-threaded
     
     # The Execution Definition
     # e.g., command=["python3"], args=["/app/process.py"]

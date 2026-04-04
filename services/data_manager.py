@@ -30,7 +30,7 @@ class DataExchangeManager(ABC):
 # --- 2. The Local Disk (File Store) Implementation ---
 
 class FileStoreDataManager(DataExchangeManager):
-    def __init__(self, base_dir: str = "/tmp/thesis_data_store"):
+    def __init__(self, base_dir: str = "/tmp/ts_data_store"):
         """
         Initializes the local disk manager. All workflow data lives under base_dir.
         """

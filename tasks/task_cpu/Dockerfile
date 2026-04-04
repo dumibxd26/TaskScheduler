@@ -1,4 +1,4 @@
-# Dockerfile
 FROM python:3.9-slim
 WORKDIR /app
 COPY task_cpu.py ./
+CMD ["python3", "task_cpu.py"]

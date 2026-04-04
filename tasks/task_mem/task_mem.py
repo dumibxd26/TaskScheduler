@@ -2,26 +2,26 @@ import os
 import json
 import time
 
-# 1. Read input injected by the Scheduler via Environment Variables!
-file_path = os.environ.get("generated_file_path")
-if not file_path:
-    raise ValueError("Missing 'generated_file_path' environment variable!")
-
-print(f"Starting Memory task using file: {file_path}")
+# Receive metadata from the IO task (passed as env var by the orchestrator)
+prev_file_path = os.environ.get("generated_file_path", "unknown")
+print(f"Starting Memory task. Received upstream path: {prev_file_path}")
 start_time = time.time()
 
-# 2. Simulate Memory Load: Load the 50MB file and duplicate it 5 times in RAM
-memory_hog = []
-with open(file_path, "r") as f:
-    raw_data = f.read()
+# Allocate ~200MB in RAM using 1MB string chunks
+# This is the actual memory stress — 200 objects of 1MB each
+MB = 1024 * 1024
+chunk_size_mb = 200
+memory_hog = [b"M" * MB for _ in range(chunk_size_mb)]
 
-for i in range(5):
-    # Appending strings creates new objects in memory (using ~250MB)
-    memory_hog.append(raw_data + str(i))
+array_size = len(memory_hog)  # = 200
+print(f"Held {array_size} MB in RAM.")
 
-array_size = len(memory_hog)
+# Keep it allocated for a moment to ensure the OS actually pages it in
+time.sleep(1)
+del memory_hog
+
 print(f"Memory Task finished in {time.time() - start_time:.2f} seconds.")
 
-# 3. Output metadata for Task 3
-with open("/scheduler_outputs/processed_array_size.json", "w") as out:
-    json.dump(array_size, out)
+# Signal output to the orchestrator via stdout
+output = {"processed_array_size": array_size}
+print(f"__TS_OUTPUT__={json.dumps(output)}")

@@ -3,24 +3,25 @@ import json
 import time
 import hashlib
 
-# 1. Read input from Task 2
-array_size_str = os.environ.get("processed_array_size")
-if not array_size_str:
-    raise ValueError("Missing 'processed_array_size' environment variable!")
-
+# Receive metadata from the Memory task (passed as env var by the orchestrator)
+array_size_str = os.environ.get("processed_array_size", "50")
 array_size = int(array_size_str)
-print(f"Starting CPU task. Will compute hashes based on size: {array_size}")
+print(f"Starting CPU task. array_size={array_size}, computing SHA-256 hashes...")
 start_time = time.time()
 
-# 2. Simulate CPU Load: Calculate SHA-256 hashes in a tight loop
-# We loop a few million times. Adjust the multiplier to make it run for ~3-5 seconds
-target_loops = array_size * 1000000  
+# Simulate CPU Load: tight SHA-256 hashing loop
+# array_size=200 -> 200*10000 = 2_000_000 iterations (~2-4s on M2)
+target_loops = array_size * 10_000
 final_hash = ""
 
 for i in range(target_loops):
-    # Hashing is pure CPU work
-    hash_obj = hashlib.sha256(str(i).encode('utf-8'))
+    h = hashlib.sha256(str(i).encode())
     if i == target_loops - 1:
-        final_hash = hash_obj.hexdigest()
+        final_hash = h.hexdigest()
 
-print(f"CPU Task finished in {time.time() - start_time:.2f} seconds. Final hash: {final_hash}")
+print(f"CPU Task finished in {time.time() - start_time:.2f} seconds.")
+print(f"Final hash: {final_hash}")
+
+# Signal output to the orchestrator via stdout
+output = {"status": "workflow_complete", "final_hash": final_hash}
+print(f"__TS_OUTPUT__={json.dumps(output)}")

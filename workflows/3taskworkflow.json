@@ -8,21 +8,21 @@
         "task_class": "IO_BOUND",
         "cpu_request": 0.5,
         "memory_request": 100,
-        "image_name": "thesis-io-worker:latest",
+        "image_name": "ts-worker:v1",
         "compatible_node_types": ["IO_OPT", "GENERAL"]
       },
       "task-mem": {
         "task_class": "MEMORY_BOUND",
         "cpu_request": 0.5,
         "memory_request": 300,
-        "image_name": "thesis-mem-worker:latest",
+        "image_name": "ts-worker:v1",
         "compatible_node_types": ["MEM_OPT", "GENERAL"]
       },
       "task-cpu": {
         "task_class": "CPU_BOUND",
         "cpu_request": 1.0,
         "memory_request": 100,
-        "image_name": "thesis-cpu-worker:latest",
+        "image_name": "ts-worker:v1",
         "compatible_node_types": ["CPU_OPT", "GENERAL"]
       }
     },

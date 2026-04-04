@@ -4,7 +4,7 @@ from services.workflow_manager import ReadinessResolver
 from services.scheduler import WorkflowSchedulerRunner
 from models.enums import TaskState, WorkflowState
 
-class ThesisEngine:
+class SchedulerEngine:
     def __init__(self, queue_manager: QueueManager, resolver: ReadinessResolver, runner: WorkflowSchedulerRunner, templates: dict):
         self.queue = queue_manager
         self.resolver = resolver

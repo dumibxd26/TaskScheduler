@@ -1,31 +1,45 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
-name: thesis-cluster
+name: ts-cluster
 nodes:
   # The Control Plane (Kubernetes Brain)
   - role: control-plane
 
-  # Node 1: CPU Optimized
+  # Node 1: CPU Optimized  (4 CPUs, 1 GB RAM)
   - role: worker
     labels:
       node-type: CPU_OPT
-      # Logical constraints for your Python scheduler to read
-      thesis.capacity/cpu: "4.0"
-      thesis.capacity/memory: "1024" # 1GB RAM
-      thesis.capacity/io: "100"
+      ts.capacity/cpu: "4.0"
+      ts.capacity/memory: "1024"
+      ts.capacity/io: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-cpu
 
-  # Node 2: Memory Optimized
+  # Node 2: Memory Optimized  (1 CPU, 4 GB RAM)
   - role: worker
     labels:
       node-type: MEM_OPT
-      thesis.capacity/cpu: "1.0"
-      thesis.capacity/memory: "4096" # 4GB RAM
-      thesis.capacity/io: "100"
+      ts.capacity/cpu: "1.0"
+      ts.capacity/memory: "4096"
+      ts.capacity/io: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-mem
 
-  # Node 3: I/O Optimized
+  # Node 3: I/O Optimized  (2 CPUs, 2 GB RAM)
   - role: worker
     labels:
       node-type: IO_OPT
-      thesis.capacity/cpu: "2.0"
-      thesis.capacity/memory: "2048" # 2GB RAM
-      thesis.capacity/io: "1000"     # High IO rating
+      ts.capacity/cpu: "2.0"
+      ts.capacity/memory: "2048"
+      ts.capacity/io: "1000"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-io

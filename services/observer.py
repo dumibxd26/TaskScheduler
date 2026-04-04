@@ -1,35 +1,44 @@
 import time
-from models.enums import TaskState
+from models.enums import TaskState, NodeType
 from models.workload import TaskInstance
-from services.scheduler import ProfileStore
+from models.profile_store import ProfileStore
+
 
 class ExecutionObserver:
     def __init__(self, profile_store: ProfileStore):
         self.profile_store = profile_store
 
-    def record_task_completion(self, task: TaskInstance, actual_runtime: float, actual_startup: float):
+    def record_task_completion(self, task: TaskInstance, actual_runtime: float,
+                               actual_startup: float, node_id: str = None,
+                               node_type: NodeType = None,
+                               node_cpu_at_start: float = 0.0,
+                               node_memory_at_start: float = 0.0):
         """
-        Called when a pod actually finishes. Updates the task state and the learning profile.
+        Called when a pod finishes.
+        - Marks the task FINISHED and stamps finish_time.
+        - Records the observation in the ProfileStore (per-node, median-based).
         """
-        # 1. Update task state
         task.state = TaskState.FINISHED
         task.finish_time = time.time()
-        
-        print(f"[OBSERVER] Task {task.task_instance_id} finished in {actual_runtime}s (Startup: {actual_startup}s).")
 
-        # 2. Update the Profile Store (Using a simple EWMA formula)
-        # EWMA: New_Estimate = (Old_Estimate * 0.7) + (Actual_Observation * 0.3)
-        current_metrics = self.profile_store.get_metrics(task.task_template_id)
-        
-        old_runtime = current_metrics.get("avg_runtime", actual_runtime)
-        old_startup = current_metrics.get("startup", actual_startup)
+        print(f"[OBSERVER] Task '{task.task_instance_id}' finished in "
+              f"{actual_runtime:.2f}s (startup: {actual_startup:.2f}s) "
+              f"on {node_id or '?'} ({node_type.name if node_type else '?'})")
 
-        new_runtime = (old_runtime * 0.7) + (actual_runtime * 0.3)
-        new_startup = (old_startup * 0.7) + (actual_startup * 0.3)
-
-        # Save the new learned metrics back to the cache
-        self.profile_store._metrics_cache[task.task_template_id] = {
-            "avg_runtime": round(new_runtime, 2),
-            "startup": round(new_startup, 2)
-        }
-        print(f"[LEARNING] Updated profile for '{task.task_template_id}': Runtime ~{round(new_runtime, 2)}s")
+        if node_id is not None and node_type is not None:
+            self.profile_store.record_observation(
+                task_template_id=task.task_template_id,
+                node_id=node_id,
+                node_type=node_type,
+                actual_runtime=actual_runtime,
+                actual_startup=actual_startup,
+                node_cpu_at_start=node_cpu_at_start,
+                node_memory_at_start=node_memory_at_start,
+            )
+            profile = self.profile_store.get_profile(task.task_template_id)
+            if profile and profile.preferred_node_order:
+                best_type = profile.preferred_node_order[0]
+                best_node = profile.preferred_node_ids[0] if profile.preferred_node_ids else "?"
+                completion = profile.completion_level
+                print(f"[LEARNING] '{task.task_template_id}' best: {best_type.name}/{best_node} "
+                      f"[completion={completion:.0%}]")

@@ -11,7 +11,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: thesis-scheduler-role
+  name: ts-scheduler-role
 rules:
 - apiGroups: [""]
   resources: ["nodes"]
@@ -22,20 +22,23 @@ rules:
 - apiGroups: [""]
   resources: ["pods/binding"]
   verbs: ["create"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
 
 ---
 # 3. Bind the Role to the Service Account
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: thesis-scheduler-role-binding
+  name: ts-scheduler-role-binding
 subjects:
 - kind: ServiceAccount
-  name: thesis-scheduler-sa
+  name: ts-scheduler-sa
   namespace: default
 roleRef:
   kind: ClusterRole
-  name: thesis-scheduler-role
+  name: ts-scheduler-role
   apiGroup: rbac.authorization.k8s.io
 
 ---
@@ -43,20 +46,20 @@ roleRef:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: thesis-scheduler
+  name: ts-scheduler
   namespace: default
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: thesis-scheduler
+      app: ts-scheduler
   template:
     metadata:
       labels:
-        app: thesis-scheduler
+        app: ts-scheduler
     spec:
-      serviceAccountName: thesis-scheduler-sa # Use our God Mode account
+      serviceAccountName: ts-scheduler-sa # Use our God Mode account
       containers:
       - name: scheduler
-        image: thesis-scheduler:latest
+        image: ts-scheduler:latest
         imagePullPolicy: Never # Forces K8s to use the local image we loaded

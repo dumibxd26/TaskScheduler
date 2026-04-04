@@ -40,7 +40,7 @@ instance.state = WorkflowState.ADMITTED
 
 # --- 4. INITIALIZE SERVICES ---
 store = ProfileStore()
-algo = PlacementAlgorithm()
+algo = PlacementAlgorithm(store)
 runner = WorkflowSchedulerRunner(store, algo)
 resolver = ReadinessResolver()
 observer = ExecutionObserver(store)
@@ -75,7 +75,8 @@ while not workflow_finished:
         finished_task = active_running_tasks.pop(0)
         
         # Mock actual metrics (e.g., Task A took 5 seconds, 1 sec startup)
-        observer.record_task_completion(finished_task, actual_runtime=5.0, actual_startup=1.0)
+        observer.record_task_completion(finished_task, actual_runtime=5.0, actual_startup=1.0,
+                                        node_id=finished_task.assigned_node_id)
     
     # Step D: Check if workflow is completely done
     if all(t.state == TaskState.FINISHED for t in instance.task_instances.values()):

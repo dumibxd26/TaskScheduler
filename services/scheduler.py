@@ -13,7 +13,7 @@ __all__ = ["ProfileStore", "PlacementAlgorithm", "WorkflowSchedulerRunner"]
 # -------------------------------------------------------------------
 W_TYPE_AFFINITY     = 30   # Learned node-type preference (core thesis claim)
 W_RESOURCE_FIT      = 20   # Available CPU/memory headroom + core scaling
-W_NODE_AVAILABILITY = 20   # How soon current tasks on this node will finish
+W_NODE_AVAILABILITY = 25   # How soon current tasks on this node will finish
 W_WARM_IMAGE        = 10   # Image already cached on node
 W_LOAD_BALANCE      = 10   # Fewer running tasks = less contention
 W_FAILURE_PENALTY   = -10  # Penalty for nodes that failed this task before

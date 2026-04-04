@@ -22,7 +22,7 @@ def setup_simulation():
     # 2. Define the Recipe (IO -> Mem -> CPU)
     template = WorkflowTemplate(
         workflow_template_id="mac-mini-pipeline-v1", name="Constrained Pipeline",
-        workflow_class=WorkflowClass.BATCH, default_priority=PriorityClass.NORMAL, default_preemptable=True,
+        workflow_class=WorkflowClass.BATCH, default_priority=PriorityClass.BATCH, default_preemptable=True,
         tasks={
             "task-io": TaskTemplate("task-io", "IO Job", TaskClass.IO_BOUND, 0.5, 100.0, "img-io", [NodeType.IO_OPT, NodeType.GENERAL]),
             "task-mem": TaskTemplate("task-mem", "Mem Job", TaskClass.MEMORY_BOUND, 0.5, 300.0, "img-mem", [NodeType.MEM_OPT, NodeType.GENERAL]),

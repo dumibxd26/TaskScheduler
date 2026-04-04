@@ -39,6 +39,6 @@ class ExecutionObserver:
             if profile and profile.preferred_node_order:
                 best_type = profile.preferred_node_order[0]
                 best_node = profile.preferred_node_ids[0] if profile.preferred_node_ids else "?"
-                completion = profile.completion_level
+                completion = profile.exploration_level
                 print(f"[LEARNING] '{task.task_template_id}' best: {best_type.name}/{best_node} "
                       f"[completion={completion:.0%}]")

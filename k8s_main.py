@@ -99,7 +99,7 @@ if __name__ == "__main__":
         workflow_template_id="real-k8s-pipeline",
         name="K8s Real Worker Pipeline",
         workflow_class=WorkflowClass.BATCH,
-        default_priority=PriorityClass.NORMAL,
+        default_priority=PriorityClass.BATCH,
         default_preemptable=True,
         tasks={
             "task-io": TaskTemplate(
@@ -135,7 +135,7 @@ if __name__ == "__main__":
         workflow_instance_id=wf_id,
         workflow_template_id="real-k8s-pipeline",
         workflow_class=WorkflowClass.BATCH,
-        priority=PriorityClass.NORMAL,
+        priority=PriorityClass.BATCH,
         preemptable=False,
         task_instances={
             "task-io":  TaskInstance("inst-io",  wf_id, "task-io"),

@@ -19,7 +19,7 @@ cluster = ClusterScenario(
 # --- 2. SETUP RECIPE (TaskA -> TaskB) ---
 template = WorkflowTemplate(
     workflow_template_id="wf-test-1", name="Test DAG",
-    workflow_class=WorkflowClass.BATCH, default_priority=PriorityClass.NORMAL, default_preemptable=True,
+    workflow_class=WorkflowClass.BATCH, default_priority=PriorityClass.BATCH, default_preemptable=True,
     tasks={
         "taskA": TaskTemplate("taskA", "Download", TaskClass.IO_BOUND, 1.0, 1024.0, "imgA", [NodeType.IO_OPT]),
         "taskB": TaskTemplate("taskB", "Process", TaskClass.CPU_BOUND, 2.0, 4096.0, "imgB", [NodeType.CPU_OPT])

@@ -84,11 +84,10 @@ class K8sScheduler:
             else:
                 free_mem = total_mem
 
-            # Collect cached images on this node
-            warm_images = set()
-            for img in (n.status.images or []):
-                for name in (img.names or []):
-                    warm_images.add(name)
+            # NOTE: We do NOT read n.status.images here.
+            # In kind, all nodes share the same Docker image cache
+            # (kind load pushes everywhere), so it provides no signal.
+            # warm_images is populated only via actual task completions.
 
             nodes.append(Node(
                 node_id=n.metadata.name,
@@ -97,7 +96,7 @@ class K8sScheduler:
                 total_memory=total_mem,
                 free_cpu=free_cpu,
                 free_memory=free_mem,
-                warm_images=warm_images,
+                # warm_images defaults to empty set
             ))
 
         scenario = ClusterScenario(
@@ -112,7 +111,19 @@ class K8sScheduler:
 
     def refresh_cluster_state(self):
         with self._cluster_lock:
-            self._cluster = self.get_cluster_state()
+            old = self._cluster
+            new = self.get_cluster_state()
+
+            # Preserve execution-level warm_images across refreshes.
+            # The K8s API doesn't track this; we accumulate it ourselves.
+            if old is not None:
+                old_by_id = {n.node_id: n for n in old.nodes}
+                for n in new.nodes:
+                    prev = old_by_id.get(n.node_id)
+                    if prev:
+                        n.warm_images = prev.warm_images
+
+            self._cluster = new
 
     # ------------------------------------------------------------------
     # Pod → internal model translation

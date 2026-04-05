@@ -26,6 +26,10 @@ MEMORY_PRESSURE_THRESHOLD = 0.15  # 15% free = danger zone
 # Exploration: 10% of the time pick randomly even when we have learned data
 EXPLORATION_RATE = 0.10
 
+# Before trusting learned rankings, require a minimum number of observations
+# per compatible node so one lucky early run cannot dominate placements.
+MIN_OBSERVATIONS_PER_NODE = 3
+
 
 class PlacementAlgorithm:
     def __init__(self, profile_store: ProfileStore):
@@ -139,41 +143,72 @@ class WorkflowSchedulerRunner:
         self.profile_store = profile_store
         self.algorithm = algorithm
 
+    def _register_choice(self, task: TaskInstance, chosen: Node) -> Node:
+        expected_rt = self.profile_store.get_expected_runtime(
+            task.task_template_id, chosen.node_id)
+        chosen.register_task(task.task_template_id, task.task_instance_id, expected_rt)
+        return chosen
+
     def schedule_task(self, task: TaskInstance, template: TaskTemplate,
                       cluster: ClusterScenario,
                       parent_node_ids: List[str] = None) -> Node:
         """
-        1. If exploration level is low, explore (random compatible node).
-        2. Otherwise, score all compatible nodes and pick the best.
-        3. Register the task on the chosen node for availability tracking.
+        Placement policy:
+        1. Sample every feasible compatible node at least once.
+        2. Keep exploring nodes with fewer than MIN_OBSERVATIONS_PER_NODE runs.
+        3. After that, exploit most of the time, with a small random exploration rate.
+        4. Register the task on the chosen node for availability tracking.
         """
+        compatible = [n for n in cluster.nodes
+                      if n.node_type in template.compatible_node_types]
+        feasible = [n for n in compatible
+                    if n.free_cpu >= template.cpu_request
+                    and n.free_memory >= template.memory_request]
+        candidates = feasible if feasible else compatible
+
+        if not candidates:
+            raise ValueError(f"No compatible nodes for task '{task.task_instance_id}'")
+
+        profile = self.profile_store.get_profile(task.task_template_id)
         exploration = self.profile_store.get_completion_level(task.task_template_id)
+        observed = profile.metrics_by_node if profile else {}
 
-        should_explore = (
-            exploration == 0.0
-            or random.random() < EXPLORATION_RATE
-        )
+        # Force coverage first: every candidate node should be tried at least once
+        # before we trust early learned rankings.
+        unseen = [n for n in candidates if n.node_id not in observed]
+        if unseen:
+            chosen = self._register_choice(task, random.choice(unseen))
+            explored = len(candidates) - len(unseen)
+            print(f"[EXPLORE-NEW] '{task.task_instance_id}' -> {chosen.node_type.name} "
+                  f"({chosen.node_id})  [sampled_nodes={explored + 1}/{len(candidates)}]")
+            return chosen
 
-        if should_explore and exploration < 1.0:
-            compatible = [n for n in cluster.nodes
-                          if n.node_type in template.compatible_node_types]
-            if compatible:
-                chosen = random.choice(compatible)
-                expected_rt = self.profile_store.get_expected_runtime(
-                    task.task_template_id, chosen.node_id)
-                chosen.register_task(task.task_template_id, task.task_instance_id, expected_rt)
-                print(f"[EXPLORE] '{task.task_instance_id}' -> {chosen.node_type.name} "
-                      f"({chosen.node_id})  [exploration={exploration:.0%}]")
-                return chosen
+        # After coverage, gather a few samples per node so one lucky run does not
+        # immediately lock the scheduler into a biased preference.
+        underexplored = [
+            n for n in candidates
+            if observed.get(n.node_id) is None
+            or observed[n.node_id].count < MIN_OBSERVATIONS_PER_NODE
+        ]
+        if underexplored:
+            chosen = self._register_choice(task, random.choice(underexplored))
+            sample_count = observed[chosen.node_id].count if chosen.node_id in observed else 0
+            print(f"[EXPLORE-DEPTH] '{task.task_instance_id}' -> {chosen.node_type.name} "
+                  f"({chosen.node_id})  [node_samples={sample_count}/{MIN_OBSERVATIONS_PER_NODE}]")
+            return chosen
+
+        if random.random() < EXPLORATION_RATE:
+            chosen = self._register_choice(task, random.choice(candidates))
+            print(f"[EXPLORE-RAND] '{task.task_instance_id}' -> {chosen.node_type.name} "
+                  f"({chosen.node_id})  [exploration={exploration:.0%}]")
+            return chosen
 
         # Exploitation: full scoring
         chosen = self.algorithm.compute_placement(
             task, template, cluster.nodes, parent_node_ids)
         detail = self.algorithm.score_node(task, template, chosen, parent_node_ids)
 
-        expected_rt = self.profile_store.get_expected_runtime(
-            task.task_template_id, chosen.node_id)
-        chosen.register_task(task.task_template_id, task.task_instance_id, expected_rt)
+        self._register_choice(task, chosen)
 
         # Log the score breakdown
         parts = [f"{k}={v:.1f}" for k, v in detail.items() if k != "total" and v != 0.0]

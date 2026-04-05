@@ -94,14 +94,28 @@ if __name__ == "__main__":
             time.sleep(1) # Dramatic pause
             
             # The Observer records it and marks it FINISHED
-            node_type = cluster.nodes[0].node_type  # fallback; real node_type from task.assigned_node_id
+            matched = None
             if finished_task.assigned_node_id:
                 matched = next((n for n in cluster.nodes if n.node_id == finished_task.assigned_node_id), None)
-                if matched:
-                    node_type = matched.node_type
+            node_type = matched.node_type if matched else cluster.nodes[0].node_type
             observer.record_task_completion(finished_task, actual_runtime=3.0, actual_startup=0.5,
                                             node_id=finished_task.assigned_node_id,
                                             node_type=node_type)
+
+            # Mark the image warm on the node that just ran it.
+            # In a real cluster this reflects container-runtime cache; in simulation
+            # it ensures the W_WARM_IMAGE=10 scoring bonus applies on repeat runs.
+            if matched:
+                parent_wf = queue.admitted_workflows.get(finished_task.workflow_instance_id)
+                wf_tmpl = templates.get(
+                    parent_wf.workflow_template_id if parent_wf else None
+                ) if parent_wf else None
+                if wf_tmpl and finished_task.task_template_id in wf_tmpl.tasks:
+                    img = wf_tmpl.tasks[finished_task.task_template_id].image_name
+                    was_warm = img in matched.warm_images
+                    matched.warm_images.add(img)
+                    if not was_warm:
+                        print(f"[WARM]  '{img}' is now warm on '{matched.node_id}'")
             
             # Update the workflow state if all tasks are done
             parent_wf = queue.admitted_workflows.get(finished_task.workflow_instance_id)

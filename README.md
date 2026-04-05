@@ -1,8 +1,3 @@
-Gemini said
-Here is the definitive, logic-focused README for your custom scheduler. This strips away the Docker commands and Kubernetes setup, focusing entirely on the mathematical and architectural logic that makes your thesis novel.
-
-You can drop this directly into your GitHub repository or use it as the core technical outline for your dissertation's methodology chapter.
-
 Custom DAG-Aware Kubernetes Workflow Scheduler
 The Core Philosophy
 The native Kubernetes kube-scheduler is a myopic load balancer. It evaluates workloads one Pod at a time, strictly based on current node capacity, completely blind to workflow dependencies, historical execution times, and future resource bottlenecks.

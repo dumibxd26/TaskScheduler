@@ -14,7 +14,7 @@ class ExecutionObserver:
                                node_cpu_at_start: float = 0.0,
                                node_memory_at_start: float = 0.0):
         """
-        Called when a pod finishes.
+        Called when a pod finishes successfully.
         - Marks the task FINISHED and stamps finish_time.
         - Records the observation in the ProfileStore (per-node, median-based).
         """
@@ -42,3 +42,20 @@ class ExecutionObserver:
                 completion = profile.exploration_level
                 print(f"[LEARNING] '{task.task_template_id}' best: {best_type.name}/{best_node} "
                       f"[completion={completion:.0%}]")
+
+    def record_task_failure(self, task: TaskInstance, node_id: str = None,
+                            node_type: NodeType = None, reason: str = ""):
+        """
+        Called when a pod fails.
+        - Marks the task FAILED and stamps finish_time.
+        - Records the failure in the ProfileStore so the node gets penalised.
+        """
+        task.state = TaskState.FAILED
+        task.finish_time = time.time()
+
+        print(f"[OBSERVER] Task '{task.task_instance_id}' FAILED "
+              f"on {node_id or '?'} ({node_type.name if node_type else '?'})"
+              f"{f': {reason}' if reason else ''}")
+
+        if node_id is not None:
+            self.profile_store.record_failure(task.task_template_id, node_id)

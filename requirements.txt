@@ -1,6 +1,7 @@
 certifi==2026.2.25
 charset-normalizer==3.4.6
 durationpy==0.10
+flask
 idna==3.11
 kubernetes==35.0.0
 oauthlib==3.3.1

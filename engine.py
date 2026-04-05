@@ -2,7 +2,7 @@ import time
 from services.queue_manager import QueueManager
 from services.workflow_manager import ReadinessResolver
 from services.scheduler import WorkflowSchedulerRunner
-from models.enums import TaskState, WorkflowState, PriorityClass
+from models.enums import TaskState, WorkflowState, PriorityClass, WorkflowClass
 
 class SchedulerEngine:
     def __init__(self, queue_manager: QueueManager, resolver: ReadinessResolver, runner: WorkflowSchedulerRunner, templates: dict):
@@ -29,13 +29,23 @@ class SchedulerEngine:
         for wf_id, workflow in list(self.queue.admitted_workflows.items()):
             template = self.templates[workflow.workflow_template_id]
 
+            # Promote any WAITING tasks whose DAG dependencies are now satisfied.
+            # Tasks already in READY/RUNNING/FINISHED state are skipped inside
+            # get_ready_tasks(), so this is safe to call every tick.
+            # Failed-parent propagation also happens inside get_ready_tasks().
             ready_tasks = self.resolver.get_ready_tasks(workflow, template)
-
             if ready_tasks:
                 self.queue.enqueue_ready_tasks(ready_tasks, workflow)
+                # Escalate workflow state so callers know work is in flight
+                if workflow.state == WorkflowState.ADMITTED:
+                    workflow.state = WorkflowState.RUNNING
+
+            # Check if the workflow reached a terminal state (all tasks FINISHED
+            # or FAILED).  check_workflow_terminal sets the state for us.
+            self.resolver.check_workflow_terminal(workflow)
 
             # Clean up finished workflows
-            if workflow.state == WorkflowState.FINISHED:
+            if workflow.state in (WorkflowState.FINISHED, WorkflowState.FAILED):
                 del self.queue.admitted_workflows[wf_id]
 
         # 3. Dispatch loop with virtual capacity tracking

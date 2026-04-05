@@ -2,7 +2,7 @@ import heapq
 import time
 from dataclasses import dataclass
 from typing import List, Optional
-from models.enums import PriorityClass, WorkflowState
+from models.enums import PriorityClass, WorkflowState, TaskState
 from models.workload import WorkflowInstance, TaskInstance
 
 # How many seconds before REAL_TIME_MEDIUM ages into REAL_TIME_HIGH
@@ -62,6 +62,9 @@ class QueueManager:
         """Put DAG-ready tasks into the task queue, inheriting the workflow's priority."""
         now = time.time()
         for task in tasks:
+            # Transition WAITING -> READY so the ReadinessResolver won't return
+            # this task again next tick and create duplicate queue entries.
+            task.state = TaskState.READY
             entry = TaskEntry(
                 task=task,
                 workflow=workflow,

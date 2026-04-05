@@ -43,18 +43,36 @@ def create_k8s_pod(v1_api, pod_name, node_name, image_name, command, args,
 
 
 
-def wait_for_pod_completion(v1_api, pod_name) -> float:
-    """Polls K8s until the pod Succeeded/Failed; returns wall-clock runtime in seconds."""
+def wait_for_pod_completion(v1_api, pod_name) -> tuple:
+    """
+    Polls K8s until the pod Succeeded/Failed.
+    Returns (startup_seconds, runtime_seconds) where:
+      - startup = Pending → Running  (image pull + container init)
+      - runtime = Running → Succeeded (actual task execution)
+
+    NOTE (kind / local clusters): `kind load docker-image` copies the image into
+    every node's containerd cache simultaneously, so Docker-level pull time is ~0
+    on all nodes.  The startup split here still captures container-runtime
+    initialisation overhead.  Our scheduler's warm_images set models a higher-level
+    notion of warmth: "has this task's container ever been launched on this node?"
+    Nodes that have already run a task get a W_WARM_IMAGE=10 scoring bonus on
+    future placements, reflecting reduced JIT, page-cache, and runtime-init costs.
+    """
     print(f"[K8S] Waiting for '{pod_name}' ...")
-    t0 = time.time()
+    t_submit = time.time()
+    t_running = None
     while True:
         phase = v1_api.read_namespaced_pod_status(
             name=pod_name, namespace=NAMESPACE
         ).status.phase
-        if phase == "Succeeded":
-            rt = time.time() - t0
-            print(f"[K8S] '{pod_name}' succeeded in {rt:.2f}s")
-            return rt
+        if phase == "Running" and t_running is None:
+            t_running = time.time()
+        elif phase == "Succeeded":
+            now = time.time()
+            startup = (t_running - t_submit) if t_running is not None else 0.0
+            runtime = (now - t_running) if t_running is not None else (now - t_submit)
+            print(f"[K8S] '{pod_name}' done | startup={startup:.2f}s  runtime={runtime:.2f}s")
+            return startup, runtime
         if phase == "Failed":
             raise RuntimeError(f"Pod '{pod_name}' failed!")
         time.sleep(1)
@@ -178,6 +196,12 @@ if __name__ == "__main__":
             # 2. Scheduler picks the best node (passes parent node IDs for data locality)
             chosen_node = runner.schedule_task(task, task_tmpl, cluster, parent_node_ids)
 
+            # Record warm/cold state BEFORE the task runs so the log is informative
+            # and so future scheduling decisions can see the pre-run state.
+            was_warm = task_tmpl.image_name in chosen_node.warm_images
+            print(f"[WARM]  '{task_tmpl.image_name}' on '{chosen_node.node_id}': "
+                  f"{'WARM (bonus +10)' if was_warm else 'COLD (first run)'}")
+
             # 3. Submit real pod to K8s (node hard-pinned by scheduler decision)
             pod_name = f"{task.task_instance_id}-{int(time.time())}"
             task.start_time = time.time()
@@ -190,8 +214,8 @@ if __name__ == "__main__":
             )
             task.state = TaskState.RUNNING
 
-            # 4. Block until pod completes
-            actual_runtime = wait_for_pod_completion(v1, pod_name)
+            # 4. Block until pod completes — returns (startup_seconds, runtime_seconds)
+            actual_startup, actual_runtime = wait_for_pod_completion(v1, pod_name)
 
             # 5. Unregister task from node tracker (it's done)
             chosen_node.unregister_task(task.task_instance_id)
@@ -204,11 +228,17 @@ if __name__ == "__main__":
 
             # 7. Update the learning profile
             observer.record_task_completion(
-                task, actual_runtime=actual_runtime, actual_startup=1.0,
+                task, actual_runtime=actual_runtime, actual_startup=actual_startup,
                 node_id=chosen_node.node_id, node_type=chosen_node.node_type,
                 node_cpu_at_start=chosen_node.cpu_usage_ratio,
                 node_memory_at_start=chosen_node.memory_usage_ratio,
             )
+
+            # 8. Mark the image as warm on this node for future placements.
+            #    The W_WARM_IMAGE=10 bonus in score_node() will now apply.
+            chosen_node.warm_images.add(task_tmpl.image_name)
+            if not was_warm:
+                print(f"[WARM]  '{task_tmpl.image_name}' is now warm on '{chosen_node.node_id}'")
 
         if all(t.state == TaskState.FINISHED for t in my_workflow.task_instances.values()):
             my_workflow.state = WorkflowState.FINISHED

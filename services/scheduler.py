@@ -143,10 +143,14 @@ class WorkflowSchedulerRunner:
         self.profile_store = profile_store
         self.algorithm = algorithm
 
-    def _register_choice(self, task: TaskInstance, chosen: Node) -> Node:
+    def _register_choice(self, task: TaskInstance, template: TaskTemplate,
+                         chosen: Node) -> Node:
         expected_rt = self.profile_store.get_expected_runtime(
             task.task_template_id, chosen.node_id)
-        chosen.register_task(task.task_template_id, task.task_instance_id, expected_rt)
+        chosen.register_task(
+            task.task_template_id, task.task_instance_id, expected_rt,
+            cpu_request=template.cpu_request, memory_request=template.memory_request,
+        )
         return chosen
 
     def schedule_task(self, task: TaskInstance, template: TaskTemplate,
@@ -177,7 +181,7 @@ class WorkflowSchedulerRunner:
         # before we trust early learned rankings.
         unseen = [n for n in candidates if n.node_id not in observed]
         if unseen:
-            chosen = self._register_choice(task, random.choice(unseen))
+            chosen = self._register_choice(task, template, random.choice(unseen))
             explored = len(candidates) - len(unseen)
             print(f"[EXPLORE-NEW] '{task.task_instance_id}' -> {chosen.node_type.name} "
                   f"({chosen.node_id})  [sampled_nodes={explored + 1}/{len(candidates)}]")
@@ -191,14 +195,14 @@ class WorkflowSchedulerRunner:
             or observed[n.node_id].count < MIN_OBSERVATIONS_PER_NODE
         ]
         if underexplored:
-            chosen = self._register_choice(task, random.choice(underexplored))
+            chosen = self._register_choice(task, template, random.choice(underexplored))
             sample_count = observed[chosen.node_id].count if chosen.node_id in observed else 0
             print(f"[EXPLORE-DEPTH] '{task.task_instance_id}' -> {chosen.node_type.name} "
                   f"({chosen.node_id})  [node_samples={sample_count}/{MIN_OBSERVATIONS_PER_NODE}]")
             return chosen
 
         if random.random() < EXPLORATION_RATE:
-            chosen = self._register_choice(task, random.choice(candidates))
+            chosen = self._register_choice(task, template, random.choice(candidates))
             print(f"[EXPLORE-RAND] '{task.task_instance_id}' -> {chosen.node_type.name} "
                   f"({chosen.node_id})  [exploration={exploration:.0%}]")
             return chosen
@@ -208,7 +212,7 @@ class WorkflowSchedulerRunner:
             task, template, cluster.nodes, parent_node_ids)
         detail = self.algorithm.score_node(task, template, chosen, parent_node_ids)
 
-        self._register_choice(task, chosen)
+        self._register_choice(task, template, chosen)
 
         # Log the score breakdown
         parts = [f"{k}={v:.1f}" for k, v in detail.items() if k != "total" and v != 0.0]

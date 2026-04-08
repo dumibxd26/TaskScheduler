@@ -5,41 +5,95 @@ nodes:
   # The Control Plane (Kubernetes Brain)
   - role: control-plane
 
-  # Node 1: CPU Optimized  (4 CPUs, 1 GB RAM)
+  # ── CPU-Optimised nodes (2 CPUs, 1 GB RAM each) ──
   - role: worker
     labels:
       node-type: CPU_OPT
-      ts.capacity/cpu: "4.0"
+      ts.capacity/cpu: "2.0"
       ts.capacity/memory: "1024"
       ts.capacity/io: "100"
     kubeadmConfigPatches:
       - |
         kind: JoinConfiguration
         nodeRegistration:
-          name: ts-node-cpu
+          name: ts-node-cpu-1
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data
 
-  # Node 2: Memory Optimized  (1 CPU, 4 GB RAM)
   - role: worker
     labels:
-      node-type: MEM_OPT
-      ts.capacity/cpu: "1.0"
-      ts.capacity/memory: "4096"
+      node-type: CPU_OPT
+      ts.capacity/cpu: "2.0"
+      ts.capacity/memory: "1024"
       ts.capacity/io: "100"
     kubeadmConfigPatches:
       - |
         kind: JoinConfiguration
         nodeRegistration:
-          name: ts-node-mem
+          name: ts-node-cpu-2
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data
 
-  # Node 3: I/O Optimized  (2 CPUs, 2 GB RAM)
+  # ── Memory-Optimised nodes (1 CPU, 2 GB RAM each) ──
+  - role: worker
+    labels:
+      node-type: MEM_OPT
+      ts.capacity/cpu: "1.0"
+      ts.capacity/memory: "2048"
+      ts.capacity/io: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-mem-1
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data
+
+  - role: worker
+    labels:
+      node-type: MEM_OPT
+      ts.capacity/cpu: "1.0"
+      ts.capacity/memory: "2048"
+      ts.capacity/io: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-mem-2
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data
+
+  # ── IO-Optimised nodes (1 CPU, 1 GB RAM each) ──
   - role: worker
     labels:
       node-type: IO_OPT
-      ts.capacity/cpu: "2.0"
-      ts.capacity/memory: "2048"
+      ts.capacity/cpu: "1.0"
+      ts.capacity/memory: "1024"
       ts.capacity/io: "1000"
     kubeadmConfigPatches:
       - |
         kind: JoinConfiguration
         nodeRegistration:
-          name: ts-node-io
+          name: ts-node-io-1
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data
+
+  - role: worker
+    labels:
+      node-type: IO_OPT
+      ts.capacity/cpu: "1.0"
+      ts.capacity/memory: "1024"
+      ts.capacity/io: "1000"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-io-2
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data

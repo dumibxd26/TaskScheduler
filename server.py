@@ -549,68 +549,22 @@ def create_app(server: SchedulerServer) -> Flask:
 # ===========================================================================
 
 def _build_cluster_from_k8s() -> ClusterScenario:
-    """Discover nodes from the live K8s cluster."""
-    from kubernetes import client, config
-    try:
-        config.load_incluster_config()
-    except Exception:
-        config.load_kube_config()
-
-    v1 = client.CoreV1Api()
-    k8s_nodes = v1.list_node().items
-    nodes = []
-
-    _nt = {e.name: e for e in NodeType}
-
-    for n in k8s_nodes:
-        labels = n.metadata.labels or {}
-        nt_str = labels.get("node-type")
-        if nt_str is None:
-            continue
-        node_type = _nt.get(nt_str, NodeType.GENERAL)
-
-        total_cpu = float(labels.get("ts.capacity/cpu", "1"))
-        total_mem = float(labels.get("ts.capacity/memory", "1024"))
-
-        alloc = n.status.allocatable or {}
-        free_cpu = float(alloc.get("cpu", total_cpu))
-        free_mem_ki = alloc.get("memory", f"{int(total_mem * 1024)}Ki")
-        if isinstance(free_mem_ki, str) and free_mem_ki.endswith("Ki"):
-            free_mem = float(free_mem_ki[:-2]) / 1024
-        else:
-            free_mem = total_mem
-
-        # NOTE: We intentionally do NOT read n.status.images here.
-        # In kind, `kind load docker-image` pushes images to ALL nodes
-        # simultaneously, so Docker-level cache is identical everywhere
-        # and provides zero scheduling signal.
-        # Instead, warm_images starts empty and is populated only when a
-        # task actually runs on a node (see _handle_completion), modelling
-        # real execution-level warmth (page cache, JIT, cgroup reuse).
-
-        nodes.append(Node(
-            node_id=n.metadata.name, node_type=node_type,
-            total_cpu=total_cpu, total_memory=total_mem,
-            free_cpu=free_cpu, free_memory=free_mem,
-            # warm_images defaults to empty set via dataclass
-        ))
-
-    print(f"[CLUSTER] Discovered {len(nodes)} worker node(s): "
-          f"{[f'{nd.node_id}({nd.node_type.name})' for nd in nodes]}")
-    return ClusterScenario(
-        scenario_id="live-k8s", name="Live Cluster",
-        description="Auto-discovered", nodes=nodes,
-    )
+    """Discover nodes and compute real free resources from the live K8s cluster."""
+    from services.k8s_cluster import poll_cluster_state
+    return poll_cluster_state()
 
 
 def _build_simulated_cluster() -> ClusterScenario:
     return ClusterScenario(
         scenario_id="sim", name="Simulated Cluster",
-        description="3 virtual nodes",
+        description="6 virtual nodes (2×CPU, 2×MEM, 2×IO)",
         nodes=[
-            Node("node-cpu", NodeType.CPU_OPT, 4.0, 1024.0, 4.0, 1024.0),
-            Node("node-mem", NodeType.MEM_OPT, 1.0, 4096.0, 1.0, 4096.0),
-            Node("node-io",  NodeType.IO_OPT,  2.0, 2048.0, 2.0, 2048.0),
+            Node("node-cpu-1", NodeType.CPU_OPT, 4.0, 2048.0, 4.0, 2048.0),
+            Node("node-cpu-2", NodeType.CPU_OPT, 4.0, 2048.0, 4.0, 2048.0),
+            Node("node-mem-1", NodeType.MEM_OPT, 1.0, 8192.0, 1.0, 8192.0),
+            Node("node-mem-2", NodeType.MEM_OPT, 1.0, 8192.0, 1.0, 8192.0),
+            Node("node-io-1",  NodeType.IO_OPT,  2.0, 4096.0, 2.0, 4096.0),
+            Node("node-io-2",  NodeType.IO_OPT,  2.0, 4096.0, 2.0, 4096.0),
         ],
     )
 

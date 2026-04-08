@@ -1,4 +1,5 @@
 import time
+import json
 from typing import Optional, List
 from models.enums import NodeType
 from models.profile import TaskProfile, NodeMetrics, Observation, NodeTypeMetrics
@@ -88,3 +89,59 @@ class ProfileStore:
 
         # Recompute type-level aggregates and rankings
         profile.update_preferences()
+
+    # ------------------------------------------------------------------
+    # Serialisation — JSON export / import for persistence
+    # ------------------------------------------------------------------
+    def to_json(self) -> str:
+        """Serialise the entire store to a JSON string."""
+        data = {}
+        for tid, profile in self.profiles.items():
+            p = {
+                "node_type_map": {nid: nt.name for nid, nt in profile._node_type_map.items()},
+                "failures_by_node": dict(profile.failures_by_node),
+                "nodes": {},
+            }
+            for nid, nm in profile.metrics_by_node.items():
+                p["nodes"][nid] = [
+                    {
+                        "runtime": o.runtime,
+                        "startup": o.startup,
+                        "cpu": o.node_cpu_at_start,
+                        "mem": o.node_memory_at_start,
+                        "ts": o.timestamp,
+                    }
+                    for o in nm.observations
+                ]
+            data[tid] = p
+        return json.dumps(data)
+
+    def load_json(self, raw: str):
+        """Restore profiles from a JSON string (additive — merges with existing data)."""
+        data = json.loads(raw)
+        for tid, p in data.items():
+            if tid not in self.profiles:
+                self.profiles[tid] = TaskProfile(task_template_id=tid)
+            profile = self.profiles[tid]
+
+            # Restore node type map
+            for nid, nt_name in p.get("node_type_map", {}).items():
+                profile._node_type_map[nid] = NodeType[nt_name]
+
+            # Restore failure counters
+            for nid, count in p.get("failures_by_node", {}).items():
+                profile.failures_by_node[nid] = count
+
+            # Restore per-node observations
+            for nid, obs_list in p.get("nodes", {}).items():
+                if nid not in profile.metrics_by_node:
+                    profile.metrics_by_node[nid] = NodeMetrics()
+                for o in obs_list:
+                    profile.metrics_by_node[nid].add_observation(Observation(
+                        runtime=o["runtime"],
+                        startup=o["startup"],
+                        node_cpu_at_start=o.get("cpu", 0.0),
+                        node_memory_at_start=o.get("mem", 0.0),
+                        timestamp=o.get("ts", 0.0),
+                    ))
+            profile.update_preferences()

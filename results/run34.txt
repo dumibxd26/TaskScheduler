@@ -1,0 +1,350 @@
+REDMOND+bdumitrescu@Dumi MINGW64 /c/work_proj/TaskScheduler (main)
+$ python submit_workflows.py 10
+[OK] Scheduler pod: ts-scheduler-5d96f5b7d4-x9jtt (Running)
+
+============================================================
+  WORKFLOW: wf-001
+============================================================
+
+  [wf-001] Submitted: wf-001-task-io-312963
+
+============================================================
+  WORKFLOW: wf-002
+============================================================
+
+  [wf-002] Submitted: wf-002-task-io-314964
+
+============================================================
+  WORKFLOW: wf-003
+============================================================
+
+  [wf-003] Submitted: wf-003-task-io-316965
+
+============================================================
+  WORKFLOW: wf-004
+============================================================
+
+  [wf-004] Submitted: wf-004-task-io-318965
+  [wf-001] task-io    -> ts-node-cpu-1         Succeeded   (6.1s)
+  [wf-001] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-001] Submitted: wf-001-task-mem-312963
+
+============================================================
+  WORKFLOW: wf-005
+============================================================
+
+  [wf-005] Submitted: wf-005-task-io-320966
+  [wf-002] task-io    -> ts-node-io-2          Succeeded   (7.1s)
+  [wf-002] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-002] Submitted: wf-002-task-mem-314964
+
+============================================================
+  WORKFLOW: wf-006
+============================================================
+
+  [wf-006] Submitted: wf-006-task-io-322967
+  [wf-003] task-io    -> ts-node-mem-2         Succeeded   (6.1s)
+  [wf-003] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-003] Submitted: wf-003-task-mem-316965
+
+============================================================
+  WORKFLOW: wf-007
+============================================================
+
+  [wf-007] Submitted: wf-007-task-io-324967
+  [wf-004] task-io    -> ts-node-io-2          Succeeded   (6.1s)
+  [wf-004] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-004] Submitted: wf-004-task-mem-318965
+
+============================================================
+  WORKFLOW: wf-008
+============================================================
+
+  [wf-008] Submitted: wf-008-task-io-326968
+  [wf-006] task-io    -> ts-node-cpu-1         Succeeded   (4.0s)
+  [wf-006] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-006] Submitted: wf-006-task-mem-322967
+  [wf-005] task-io    -> ts-node-cpu-2         Failed      (6.1s)
+  [wf-005] FAILED at task-io — aborting workflow
+  [wf-001] task-mem   -> ts-node-cpu-2         Failed      (8.1s)
+  [wf-001] FAILED at task-mem — aborting workflow
+
+============================================================
+  WORKFLOW: wf-009
+============================================================
+
+  [wf-009] Submitted: wf-009-task-io-328969
+  [wf-007] task-io    -> ts-node-mem-1         Succeeded   (4.0s)
+  [wf-007] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-007] Submitted: wf-007-task-mem-324967
+  [wf-002] task-mem   -> ts-node-io-2          Succeeded   (7.1s)
+  [wf-002] Output: {'processed_array_size': 600}
+
+  [wf-002] Submitted: wf-002-task-cpu-314964
+
+============================================================
+  WORKFLOW: wf-010
+============================================================
+
+  [wf-010] Submitted: wf-010-task-io-330969
+  [wf-008] task-io    -> ts-node-io-1          Succeeded   (6.1s)
+  [wf-008] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-008] Submitted: wf-008-task-mem-326968
+  [wf-006] task-mem   -> ts-node-io-2          Succeeded   (6.1s)
+  [wf-006] Output: {'processed_array_size': 600}
+
+  [wf-006] Submitted: wf-006-task-cpu-322967
+  [wf-009] task-io    -> ts-node-io-1          Succeeded   (6.1s)
+  [wf-009] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-009] Submitted: wf-009-task-mem-328969
+  [wf-007] task-mem   -> ts-node-mem-1         Succeeded   (6.1s)
+  [wf-007] Output: {'processed_array_size': 600}
+
+  [wf-007] Submitted: wf-007-task-cpu-324967
+  [wf-010] task-io    -> ts-node-mem-1         Succeeded   (5.0s)
+  [wf-010] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-010] Submitted: wf-010-task-mem-330969
+  [wf-002] task-cpu   -> ts-node-io-1          Succeeded   (8.1s)
+  [wf-002] Output: {'status': 'workflow_complete', 'final_hash': 'c401c0f974d94ea41758695a3a048fddbfaaa448dce08a8f4c20b8292e083f3c'}
+  [wf-006] task-cpu   -> ts-node-cpu-1         Succeeded   (6.1s)
+  [wf-006] Output: {'status': 'workflow_complete', 'final_hash': 'c401c0f974d94ea41758695a3a048fddbfaaa448dce08a8f4c20b8292e083f3c'}
+  [wf-009] task-mem   -> ts-node-mem-2         Succeeded   (6.1s)
+  [wf-009] Output: {'processed_array_size': 600}
+
+  [wf-009] Submitted: wf-009-task-cpu-328969
+  [wf-007] task-cpu   -> ts-node-io-1          Succeeded   (6.1s)
+  [wf-007] Output: {'status': 'workflow_complete', 'final_hash': 'c401c0f974d94ea41758695a3a048fddbfaaa448dce08a8f4c20b8292e083f3c'}
+  [wf-009] task-cpu   -> ts-node-mem-2         Succeeded   (6.1s)
+  [wf-009] Output: {'status': 'workflow_complete', 'final_hash': 'c401c0f974d94ea41758695a3a048fddbfaaa448dce08a8f4c20b8292e083f3c'}
+  [wf-004] task-mem   -> ts-node-cpu-2         Failed      (24.2s)
+  [wf-004] FAILED at task-mem — aborting workflow
+  [wf-003] task-mem   -> ts-node-cpu-2         Failed      (26.2s)
+  [wf-003] FAILED at task-mem — aborting workflow
+  [wf-010] task-mem   -> ts-node-cpu-2         Failed      (20.2s)
+  [wf-010] FAILED at task-mem — aborting workflow
+  [wf-008] task-mem   -> ts-node-cpu-2         Failed      (23.2s)
+  [wf-008] FAILED at task-mem — aborting workflow
+
+======================================================================
+  PLACEMENT SUMMARY
+======================================================================
+  Workflow             Task         Node                   Status       Time
+  -------------------- ------------ ---------------------- ---------- ------
+  wf-001               task-io      ts-node-cpu-1          Succeeded    6.1s
+  wf-001               task-mem     ts-node-cpu-2          Failed       8.1s
+
+  wf-002               task-io      ts-node-io-2           Succeeded    7.1s
+  wf-002               task-mem     ts-node-io-2           Succeeded    7.1s
+  wf-002               task-cpu     ts-node-io-1           Succeeded    8.1s
+
+  wf-003               task-io      ts-node-mem-2          Succeeded    6.1s
+  wf-003               task-mem     ts-node-cpu-2          Failed      26.2s
+
+  wf-004               task-io      ts-node-io-2           Succeeded    6.1s
+  wf-004               task-mem     ts-node-cpu-2          Failed      24.2s
+
+  wf-005               task-io      ts-node-cpu-2          Failed       6.1s
+
+  wf-006               task-io      ts-node-cpu-1          Succeeded    4.0s
+  wf-006               task-mem     ts-node-io-2           Succeeded    6.1s
+  wf-006               task-cpu     ts-node-cpu-1          Succeeded    6.0s
+
+  wf-007               task-io      ts-node-mem-1          Succeeded    4.0s
+  wf-007               task-mem     ts-node-mem-1          Succeeded    6.1s
+  wf-007               task-cpu     ts-node-io-1           Succeeded    6.1s
+
+  wf-008               task-io      ts-node-io-1           Succeeded    6.1s
+  wf-008               task-mem     ts-node-cpu-2          Failed      23.2s
+
+  wf-009               task-io      ts-node-io-1           Succeeded    6.1s
+  wf-009               task-mem     ts-node-mem-2          Succeeded    6.1s
+  wf-009               task-cpu     ts-node-mem-2          Succeeded    6.1s
+
+  wf-010               task-io      ts-node-mem-1          Succeeded    5.0s
+  wf-010               task-mem     ts-node-cpu-2          Failed      20.2s
+
+  ──────────────────────────────────────────────────────────────────────
+  NODE DISTRIBUTION:
+    ts-node-cpu-1          ran 3 task(s): task-io, task-io, task-cpu
+    ts-node-cpu-2          ran 6 task(s): task-mem, task-mem, task-mem, task-io, task-mem, task-mem
+    ts-node-io-1           ran 4 task(s): task-cpu, task-cpu, task-io, task-io
+    ts-node-io-2           ran 4 task(s): task-io, task-mem, task-io, task-mem
+    ts-node-mem-1          ran 3 task(s): task-io, task-mem, task-io
+    ts-node-mem-2          ran 3 task(s): task-io, task-mem, task-cpu
+
+  Cleanup: kubectl delete pods -l '!app'
+(venv) 
+REDMOND+bdumitrescu@Dumi MINGW64 /c/work_proj/TaskScheduler (main)
+$ kubectl delete pods -l '!app'
+pod "wf-001-task-io-312963" deleted from default namespace
+pod "wf-001-task-mem-312963" deleted from default namespace
+pod "wf-002-task-cpu-314964" deleted from default namespace
+pod "wf-002-task-io-314964" deleted from default namespace
+pod "wf-002-task-mem-314964" deleted from default namespace
+pod "wf-003-task-io-316965" deleted from default namespace
+pod "wf-003-task-mem-316965" deleted from default namespace
+pod "wf-004-task-io-318965" deleted from default namespace
+pod "wf-004-task-mem-318965" deleted from default namespace
+pod "wf-005-task-io-320966" deleted from default namespace
+pod "wf-006-task-cpu-322967" deleted from default namespace
+pod "wf-006-task-io-322967" deleted from default namespace
+pod "wf-006-task-mem-322967" deleted from default namespace
+pod "wf-007-task-cpu-324967" deleted from default namespace
+pod "wf-007-task-io-324967" deleted from default namespace
+pod "wf-007-task-mem-324967" deleted from default namespace
+pod "wf-008-task-io-326968" deleted from default namespace
+pod "wf-008-task-mem-326968" deleted from default namespace
+pod "wf-009-task-cpu-328969" deleted from default namespace
+pod "wf-009-task-io-328969" deleted from default namespace
+pod "wf-009-task-mem-328969" deleted from default namespace
+pod "wf-010-task-io-330969" deleted from default namespace
+pod "wf-010-task-mem-330969" deleted from default namespace
+(venv) 
+REDMOND+bdumitrescu@Dumi MINGW64 /c/work_proj/TaskScheduler (main)
+$ python submit_workflows.py 10
+[OK] Scheduler pod: ts-scheduler-5d96f5b7d4-x9jtt (Running)
+
+============================================================
+  WORKFLOW: wf-001
+============================================================
+
+  [wf-001] Submitted: wf-001-task-io-512416
+
+============================================================
+  WORKFLOW: wf-002
+============================================================
+
+  [wf-002] Submitted: wf-002-task-io-514417
+
+============================================================
+  WORKFLOW: wf-003
+============================================================
+
+  [wf-003] Submitted: wf-003-task-io-516418
+  [wf-001] task-io    -> ts-node-mem-2         Succeeded   (5.1s)
+  [wf-001] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-001] Submitted: wf-001-task-mem-512416
+
+============================================================
+  WORKFLOW: wf-004
+============================================================
+
+  [wf-004] Submitted: wf-004-task-io-518418
+  [wf-002] task-io    -> ts-node-io-1          Succeeded   (5.1s)
+  [wf-002] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-002] Submitted: wf-002-task-mem-514417
+
+============================================================
+  WORKFLOW: wf-005
+============================================================
+
+  [wf-005] Submitted: wf-005-task-io-520419
+
+============================================================
+  WORKFLOW: wf-006
+============================================================
+
+  [wf-006] Submitted: wf-006-task-io-522420
+  [wf-003] task-io    -> ts-node-mem-1         Succeeded   (6.1s)
+  [wf-003] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-003] Submitted: wf-003-task-mem-516418
+
+============================================================
+  WORKFLOW: wf-007
+============================================================
+
+  [wf-007] Submitted: wf-007-task-io-524421
+  [wf-004] task-io    -> ts-node-io-1          Succeeded   (6.1s)
+  [wf-004] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-004] Submitted: wf-004-task-mem-518418
+
+============================================================
+  WORKFLOW: wf-008
+============================================================
+
+  [wf-008] Submitted: wf-008-task-io-526423
+  [wf-002] task-mem   -> ts-node-mem-2         Succeeded   (7.1s)
+  [wf-002] Output: {'processed_array_size': 600}
+
+  [wf-002] Submitted: wf-002-task-cpu-514417
+
+============================================================
+  WORKFLOW: wf-009
+============================================================
+
+  [wf-009] Submitted: wf-009-task-io-528423
+  [wf-006] task-io    -> ts-node-io-2          Succeeded   (6.1s)
+  [wf-006] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-006] Submitted: wf-006-task-mem-522420
+  [wf-003] task-mem   -> ts-node-mem-1         Succeeded   (6.1s)
+  [wf-003] Output: {'processed_array_size': 600}
+
+  [wf-003] Submitted: wf-003-task-cpu-516418
+  [wf-007] task-io    -> ts-node-io-2          Succeeded   (5.1s)
+  [wf-007] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-007] Submitted: wf-007-task-mem-524421
+
+============================================================
+  WORKFLOW: wf-010
+============================================================
+
+  [wf-010] Submitted: wf-010-task-io-530425
+  [wf-008] task-io    -> ts-node-cpu-1         Succeeded   (6.1s)
+  [wf-008] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-008] Submitted: wf-008-task-mem-526423
+  [wf-009] task-io    -> ts-node-cpu-1         Succeeded   (5.1s)
+  [wf-009] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-009] Submitted: wf-009-task-mem-528423
+  [wf-010] task-io    -> ts-node-io-1          Succeeded   (4.0s)
+  [wf-010] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 104857600}
+
+  [wf-010] Submitted: wf-010-task-mem-530425
+  [wf-007] task-mem   -> ts-node-mem-1         Succeeded   (6.1s)
+  [wf-007] Output: {'processed_array_size': 600}
+
+  [wf-007] Submitted: wf-007-task-cpu-524421
+  [wf-003] task-cpu   -> ts-node-io-2          Succeeded   (7.1s)
+  [wf-003] Output: {'status': 'workflow_complete', 'final_hash': 'c401c0f974d94ea41758695a3a048fddbfaaa448dce08a8f4c20b8292e083f3c'}
+  [wf-006] task-mem   -> ts-node-mem-2         Succeeded   (8.1s)
+  [wf-006] Output: {'processed_array_size': 600}
+
+  [wf-006] Submitted: wf-006-task-cpu-522420
+  [wf-002] task-cpu   -> ts-node-mem-2         Succeeded   (10.1s)
+  [wf-002] Output: {'status': 'workflow_complete', 'final_hash': 'c401c0f974d94ea41758695a3a048fddbfaaa448dce08a8f4c20b8292e083f3c'}
+  [wf-008] task-mem   -> ts-node-mem-2         Succeeded   (7.1s)
+  [wf-008] Output: {'processed_array_size': 600}
+
+  [wf-008] Submitted: wf-008-task-cpu-526423
+  [wf-009] task-mem   -> ts-node-mem-2         Succeeded   (7.1s)
+  [wf-009] Output: {'processed_array_size': 600}
+
+  [wf-009] Submitted: wf-009-task-cpu-528423
+  [wf-007] task-cpu   -> ts-node-cpu-1         Succeeded   (5.1s)
+  [wf-007] Output: {'status': 'workflow_complete', 'final_hash': 'c401c0f974d94ea41758695a3a048fddbfaaa448dce08a8f4c20b8292e083f3c'}
+  [wf-010] task-mem   -> ts-node-io-2          Succeeded   (7.1s)
+  [wf-010] Output: {'processed_array_size': 600}
+
+  [wf-010] Submitted: wf-010-task-cpu-530425
+  [wf-006] task-cpu   -> ts-node-io-2          Succeeded   (6.1s)
+  [wf-006] Output: {'status': 'workflow_complete', 'final_hash': 'c401c0f974d94ea41758695a3a048fddbfaaa448dce08a8f4c20b8292e083f3c'}
+  [wf-008] task-cpu   -> ts-node-mem-1         Succeeded   (7.1s)
+  [wf-008] Output: {'status': 'workflow_complete', 'final_hash': 'c401c0f974d94ea41758695a3a048fddbfaaa448dce08a8f4c20b8292e083f3c'}
+  [wf-010] task-cpu   -> ts-node-mem-1         Succeeded   (7.1s)
+  [wf-010] Output: {'status': 'workflow_complete', 'final_hash': 'c401c0f974d94ea41758695a3a048fddbfaaa448dce08a8f4c20b8292e083f3c'}

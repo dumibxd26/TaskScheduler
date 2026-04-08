@@ -11,6 +11,8 @@ class RunningTask:
     task_instance_id: str
     start_time: float                     # wall-clock when the pod started
     expected_runtime: Optional[float]     # median runtime from profile (None = unknown)
+    cpu_request: float = 0.0              # reserved CPU (released on unregister)
+    memory_request: float = 0.0           # reserved memory (released on unregister)
 
     @property
     def elapsed(self) -> float:
@@ -87,19 +89,27 @@ class Node:
         return latest
 
     def register_task(self, task_template_id: str, task_instance_id: str,
-                      expected_runtime: Optional[float] = None):
-        """Call when a task is placed on this node."""
+                      expected_runtime: Optional[float] = None,
+                      cpu_request: float = 0.0, memory_request: float = 0.0):
+        """Call when a task is placed on this node. Reserves capacity."""
         self.active_tasks[task_instance_id] = RunningTask(
             task_template_id=task_template_id,
             task_instance_id=task_instance_id,
             start_time=_time.time(),
             expected_runtime=expected_runtime,
+            cpu_request=cpu_request,
+            memory_request=memory_request,
         )
+        self.free_cpu -= cpu_request
+        self.free_memory -= memory_request
         self.running_tasks = len(self.active_tasks)
 
     def unregister_task(self, task_instance_id: str):
-        """Call when a task finishes on this node."""
-        self.active_tasks.pop(task_instance_id, None)
+        """Call when a task finishes on this node. Releases capacity."""
+        rt = self.active_tasks.pop(task_instance_id, None)
+        if rt is not None:
+            self.free_cpu = min(self.total_cpu, self.free_cpu + rt.cpu_request)
+            self.free_memory = min(self.total_memory, self.free_memory + rt.memory_request)
         self.running_tasks = len(self.active_tasks)
 
 @dataclass

@@ -1,0 +1,77 @@
+$ python submit_workflows.py 3
+[OK] Scheduler pod: ts-scheduler-56888d7c96-99jvb (Running)
+
+============================================================
+  WORKFLOW: wf-001
+============================================================
+
+  [wf-001] Submitted: wf-001-task-io-282774
+
+============================================================
+  WORKFLOW: wf-002
+============================================================
+
+  [wf-002] Submitted: wf-002-task-io-284775
+
+============================================================
+  WORKFLOW: wf-003
+============================================================
+
+  [wf-003] Submitted: wf-003-task-io-286775
+  [wf-001] task-io    -> ts-node-mem-2         Succeeded   (5.1s)
+  [wf-001] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 52428800}
+
+  [wf-001] Submitted: wf-001-task-mem-282774
+  [wf-002] task-io    -> ts-node-io-1          Succeeded   (5.1s)
+  [wf-002] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 52428800}
+
+  [wf-002] Submitted: wf-002-task-mem-284775
+  [wf-003] task-io    -> ts-node-cpu-1         Succeeded   (5.1s)
+  [wf-003] Output: {'generated_file_path': '/tmp/io_stress.dat', 'bytes_written': 52428800}
+
+  [wf-003] Submitted: wf-003-task-mem-286775
+  [wf-001] task-mem   -> ts-node-mem-1         Succeeded   (6.1s)
+  [wf-001] Output: {'processed_array_size': 200}
+
+  [wf-001] Submitted: wf-001-task-cpu-282774
+  [wf-002] task-mem   -> ts-node-mem-1         Succeeded   (6.1s)
+  [wf-002] Output: {'processed_array_size': 200}
+
+  [wf-002] Submitted: wf-002-task-cpu-284775
+  [wf-003] task-mem   -> ts-node-mem-2         Succeeded   (6.1s)
+  [wf-003] Output: {'processed_array_size': 200}
+
+  [wf-003] Submitted: wf-003-task-cpu-286775
+  [wf-001] task-cpu   -> ts-node-io-1          Succeeded   (5.1s)
+  [wf-001] Output: {'status': 'workflow_complete', 'final_hash': '2c5f84023b4c3c6d6124b8441ea4dc9c7e46ef7cf6d31a9ce73ccb29a130e3b3'}
+  [wf-002] task-cpu   -> ts-node-mem-2         Succeeded   (4.0s)
+  [wf-002] Output: {'status': 'workflow_complete', 'final_hash': '2c5f84023b4c3c6d6124b8441ea4dc9c7e46ef7cf6d31a9ce73ccb29a130e3b3'}
+  [wf-003] task-cpu   -> ts-node-io-2          Succeeded   (5.1s)
+  [wf-003] Output: {'status': 'workflow_complete', 'final_hash': '2c5f84023b4c3c6d6124b8441ea4dc9c7e46ef7cf6d31a9ce73ccb29a130e3b3'}
+
+======================================================================
+  PLACEMENT SUMMARY
+======================================================================
+  Workflow             Task         Node                   Status       Time
+  -------------------- ------------ ---------------------- ---------- ------
+  wf-001               task-io      ts-node-mem-2          Succeeded    5.1s
+  wf-001               task-mem     ts-node-mem-1          Succeeded    6.1s
+  wf-001               task-cpu     ts-node-io-1           Succeeded    5.1s
+
+  wf-002               task-io      ts-node-io-1           Succeeded    5.1s
+  wf-002               task-mem     ts-node-mem-1          Succeeded    6.1s
+  wf-002               task-cpu     ts-node-mem-2          Succeeded    4.0s
+
+  wf-003               task-io      ts-node-cpu-1          Succeeded    5.1s
+  wf-003               task-mem     ts-node-mem-2          Succeeded    6.1s
+  wf-003               task-cpu     ts-node-io-2           Succeeded    5.1s
+
+  ──────────────────────────────────────────────────────────────────────
+  NODE DISTRIBUTION:
+    ts-node-cpu-1          ran 1 task(s): task-io
+    ts-node-io-1           ran 2 task(s): task-cpu, task-io
+    ts-node-io-2           ran 1 task(s): task-cpu
+    ts-node-mem-1          ran 2 task(s): task-mem, task-mem
+    ts-node-mem-2          ran 3 task(s): task-io, task-cpu, task-mem
+
+  Cleanup: kubectl delete pods -l '!app'

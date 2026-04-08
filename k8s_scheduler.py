@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 import time
 import json
@@ -38,8 +40,13 @@ _DEFAULT_COMPAT = {
 }
 
 
+PROFILE_CONFIGMAP = "ts-scheduler-profiles"
+SAVE_INTERVAL = 30  # seconds between ConfigMap saves
+
+
 class K8sScheduler:
-    def __init__(self, runner: WorkflowSchedulerRunner, observer: ExecutionObserver):
+    def __init__(self, runner: WorkflowSchedulerRunner, observer: ExecutionObserver,
+                 store: ProfileStore):
         try:
             config.load_incluster_config()
         except config.ConfigException:
@@ -48,82 +55,21 @@ class K8sScheduler:
         self.v1 = client.CoreV1Api()
         self.runner = runner
         self.observer = observer
+        self.store = store
         # Track pods we've already bound (avoids duplicate bindings on re-watch)
         self._bound_pods: set = set()
         # Cache cluster state; refreshed periodically
         self._cluster: ClusterScenario | None = None
         self._cluster_lock = threading.Lock()
+        self._dirty = False  # True when profiles have changed since last save
 
     # ------------------------------------------------------------------
-    # Cluster state
+    # Cluster state — polls K8s for real free resources
     # ------------------------------------------------------------------
-    def get_cluster_state(self) -> ClusterScenario:
-        """Reads real K8s node objects and translates labels into our Node model."""
-        k8s_nodes = self.v1.list_node().items
-        nodes = []
-
-        for n in k8s_nodes:
-            labels = n.metadata.labels or {}
-            node_type_str = labels.get("node-type")
-            if node_type_str is None:
-                # Control-plane or unlabelled node — skip
-                continue
-
-            node_type = _NODE_TYPE_MAP.get(node_type_str, NodeType.GENERAL)
-
-            total_cpu = float(labels.get("ts.capacity/cpu", "1"))
-            total_mem = float(labels.get("ts.capacity/memory", "1024"))
-
-            # Allocatable from K8s gives real remaining capacity
-            alloc = n.status.allocatable or {}
-            free_cpu = float(alloc.get("cpu", total_cpu))
-            free_mem_ki = alloc.get("memory", f"{int(total_mem * 1024)}Ki")
-            # Convert KiB string (e.g. "3906252Ki") → MiB float
-            if isinstance(free_mem_ki, str) and free_mem_ki.endswith("Ki"):
-                free_mem = float(free_mem_ki[:-2]) / 1024
-            else:
-                free_mem = total_mem
-
-            # NOTE: We do NOT read n.status.images here.
-            # In kind, all nodes share the same Docker image cache
-            # (kind load pushes everywhere), so it provides no signal.
-            # warm_images is populated only via actual task completions.
-
-            nodes.append(Node(
-                node_id=n.metadata.name,
-                node_type=node_type,
-                total_cpu=total_cpu,
-                total_memory=total_mem,
-                free_cpu=free_cpu,
-                free_memory=free_mem,
-                # warm_images defaults to empty set
-            ))
-
-        scenario = ClusterScenario(
-            scenario_id="live-k8s",
-            name="Live K8s Cluster",
-            description="Auto-discovered from node labels",
-            nodes=nodes,
-        )
-        print(f"[CLUSTER] Discovered {len(nodes)} worker nodes: "
-              f"{[f'{n.node_id}({n.node_type.name})' for n in nodes]}")
-        return scenario
-
     def refresh_cluster_state(self):
+        from services.k8s_cluster import poll_cluster_state
         with self._cluster_lock:
-            old = self._cluster
-            new = self.get_cluster_state()
-
-            # Preserve execution-level warm_images across refreshes.
-            # The K8s API doesn't track this; we accumulate it ourselves.
-            if old is not None:
-                old_by_id = {n.node_id: n for n in old.nodes}
-                for n in new.nodes:
-                    prev = old_by_id.get(n.node_id)
-                    if prev:
-                        n.warm_images = prev.warm_images
-
-            self._cluster = new
+            self._cluster = poll_cluster_state(preserve_warm=self._cluster)
 
     # ------------------------------------------------------------------
     # Pod → internal model translation
@@ -149,12 +95,20 @@ class K8sScheduler:
         # Read resource requests from the first container
         container = pod.spec.containers[0]
         requests = (container.resources.requests or {}) if container.resources else {}
-        cpu_req = float(requests.get("cpu", "0.5"))
+        cpu_req_str = requests.get("cpu", "0.5")
+        # K8s may return millicore format like "200m" or plain "0.5"
+        if isinstance(cpu_req_str, str) and cpu_req_str.endswith("m"):
+            cpu_req = float(cpu_req_str[:-1]) / 1000.0
+        else:
+            cpu_req = float(cpu_req_str)
+
         mem_req_str = requests.get("memory", "128Mi")
         if mem_req_str.endswith("Mi"):
             mem_req = float(mem_req_str[:-2])
         elif mem_req_str.endswith("Gi"):
             mem_req = float(mem_req_str[:-2]) * 1024
+        elif mem_req_str.endswith("Ki"):
+            mem_req = float(mem_req_str[:-2]) / 1024
         else:
             mem_req = 128.0
 
@@ -257,18 +211,83 @@ class K8sScheduler:
                 node_id=node_name,
                 node_type=node_type,
             )
+            self._dirty = True
+
+    # ------------------------------------------------------------------
+    # Profile persistence — ConfigMap
+    # ------------------------------------------------------------------
+    def _load_profiles(self):
+        """Load saved profiles from ConfigMap on startup."""
+        try:
+            cm = self.v1.read_namespaced_config_map(
+                name=PROFILE_CONFIGMAP, namespace=NAMESPACE
+            )
+            raw = (cm.data or {}).get("profiles", "")
+            if raw:
+                self.store.load_json(raw)
+                count = sum(
+                    sum(nm.count for nm in p.metrics_by_node.values())
+                    for p in self.store.profiles.values()
+                )
+                print(f"[PERSIST] Loaded {len(self.store.profiles)} task profile(s) "
+                      f"({count} total observations) from ConfigMap")
+        except ApiException as e:
+            if e.status == 404:
+                print("[PERSIST] No saved profiles found — starting fresh")
+            else:
+                print(f"[PERSIST] Failed to load profiles: {e.reason}")
+
+    def _save_profiles(self):
+        """Save current profiles to ConfigMap."""
+        body = client.V1ConfigMap(
+            metadata=client.V1ObjectMeta(name=PROFILE_CONFIGMAP),
+            data={"profiles": self.store.to_json()},
+        )
+        try:
+            self.v1.replace_namespaced_config_map(
+                name=PROFILE_CONFIGMAP, namespace=NAMESPACE, body=body
+            )
+        except ApiException as e:
+            if e.status == 404:
+                self.v1.create_namespaced_config_map(
+                    namespace=NAMESPACE, body=body
+                )
+            else:
+                print(f"[PERSIST] Save failed: {e.reason}")
+                return
+        count = sum(
+            sum(nm.count for nm in p.metrics_by_node.values())
+            for p in self.store.profiles.values()
+        )
+        print(f"[PERSIST] Saved {len(self.store.profiles)} profile(s) "
+              f"({count} observations) to ConfigMap")
+
+    def _persist_loop(self):
+        """Background thread: saves profiles every SAVE_INTERVAL seconds."""
+        while True:
+            time.sleep(SAVE_INTERVAL)
+            if self._dirty:
+                self._save_profiles()
+                self._dirty = False
 
     # ------------------------------------------------------------------
     # Main scheduling loop
     # ------------------------------------------------------------------
     def run(self):
         """Watch for Pending pods assigned to us and schedule them."""
+        # Load previously saved profiles
+        self._load_profiles()
+
         # Initial cluster discovery
         self.refresh_cluster_state()
 
         # Start a background thread that records completions for EWMA learning
         observer_thread = threading.Thread(target=self._watch_completions, daemon=True)
         observer_thread.start()
+
+        # Start a background thread that periodically saves profiles
+        persist_thread = threading.Thread(target=self._persist_loop, daemon=True)
+        persist_thread.start()
 
         # Periodically refresh cluster state (every 60s)
         def _refresh_loop():
@@ -327,5 +346,5 @@ if __name__ == "__main__":
     runner = WorkflowSchedulerRunner(store, algo)
     observer = ExecutionObserver(store)
 
-    scheduler = K8sScheduler(runner, observer)
+    scheduler = K8sScheduler(runner, observer, store)
     scheduler.run()

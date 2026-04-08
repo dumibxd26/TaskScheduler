@@ -78,9 +78,8 @@ class SchedulerEngine:
             chosen_node = self.runner.schedule_task(
                 entry.task, task_template, cluster_scenario)
 
-            # Decrement virtual capacity to prevent double-booking this tick
-            chosen_node.free_cpu -= task_template.cpu_request
-            chosen_node.free_memory -= task_template.memory_request
+            # Capacity is now managed by register_task/unregister_task inside
+            # the runner, so no manual decrement needed here.
 
             entry.task.state = TaskState.RUNNING
             entry.task.assigned_node_id = chosen_node.node_id

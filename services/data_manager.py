@@ -28,6 +28,7 @@ class DataExchangeManager(ABC):
 
 
 # --- 2. The Local Disk (File Store) Implementation ---
+# Used by the local simulation mode where there is no real cluster.
 
 class FileStoreDataManager(DataExchangeManager):
     def __init__(self, base_dir: str = "/tmp/ts_data_store"):
@@ -92,3 +93,49 @@ class FileStoreDataManager(DataExchangeManager):
         
         print(f"[FILE STORE] Provisioned shared workspace at {shared_workspace}")
         return shared_workspace
+
+
+# --- 3. The Shared Volume (K8s) Implementation ---
+# Used in Kubernetes mode.  Every pod mounts the same host directory via
+# kind extraMounts (host → Kind node) + hostPath volume (Kind node → pod).
+#
+# Path chain:
+#   Host:      /tmp/ts-shared-data
+#   Kind node: /ts-data              (extraMounts in kind-cluster.yaml)
+#   Pod:       /data/shared           (hostPath volume in pod spec)
+#
+# Tasks themselves read/write JSON files at:
+#   /data/shared/<workflow_id>/<field_name>.json
+#
+# The orchestrator no longer mediates data transfer — it only mounts the
+# volume and passes TS_SHARED_DIR + TS_WORKFLOW_ID env vars to each pod.
+
+class SharedVolumeDataManager(DataExchangeManager):
+    """
+    In K8s mode, tasks handle their own data I/O through the shared volume.
+    This manager is used by the orchestrator only for provisioning and
+    optional verification — not for reading/writing task data.
+    """
+
+    def __init__(self, base_dir: str = "/ts-data"):
+        self.base_dir = base_dir
+        os.makedirs(self.base_dir, exist_ok=True)
+
+    def _get_wf_dir(self, wf_instance_id: str) -> str:
+        wf_dir = os.path.join(self.base_dir, wf_instance_id)
+        os.makedirs(wf_dir, exist_ok=True)
+        return wf_dir
+
+    def save_small_output(self, wf_instance_id: str, task_instance_id: str, data: Dict[str, Any]):
+        """Not used — tasks write directly to the shared volume."""
+        pass
+
+    def get_inputs_for_task(self, wf_instance_id: str, task_id: str, required_fields: List[str]) -> Dict[str, Any]:
+        """Not used — tasks read directly from the shared volume."""
+        return {}
+
+    def provision_shared_workspace(self, wf_instance_id: str) -> str:
+        """Pre-create the workflow directory on the shared volume."""
+        wf_dir = self._get_wf_dir(wf_instance_id)
+        print(f"[SHARED VOLUME] Provisioned workspace at {wf_dir}")
+        return wf_dir

@@ -168,12 +168,21 @@ def poll_cluster_state(preserve_warm: ClusterScenario | None = None) -> ClusterS
         alloc_cpu = _parse_cpu(alloc.get("cpu", str(total_cpu)))
         alloc_mem = _parse_memory_mi(alloc.get("memory", f"{int(total_mem)}Mi"))
 
+        # Read cached container images directly from the node status
+        cached_images: set[str] = set()
+        for img in (n.status.images or []):
+            for name in (img.names or []):
+                # Skip the sha256 digest-only entries
+                if "@sha256:" not in name:
+                    cached_images.add(name)
+
         node_info[n.metadata.name] = {
             "node_type": node_type,
             "total_cpu": total_cpu,
             "total_memory": total_mem,
             "alloc_cpu": alloc_cpu,
             "alloc_mem": alloc_mem,
+            "cached_images": cached_images,
         }
 
     # --- Step 2: Get actual usage (prefer metrics-server, fall back to pod requests) ---
@@ -203,11 +212,13 @@ def poll_cluster_state(preserve_warm: ClusterScenario | None = None) -> ClusterS
             total_memory=info["total_memory"],
             free_cpu=free_cpu,
             free_memory=free_mem,
+            warm_images=info["cached_images"],
         )
 
+        # Carry over active_tasks from previous poll if available
         prev = old_by_id.get(name)
         if prev:
-            node.warm_images = prev.warm_images
+            node.active_tasks = prev.active_tasks
 
         nodes.append(node)
 

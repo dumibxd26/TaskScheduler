@@ -244,12 +244,6 @@ if __name__ == "__main__":
                 node_memory_at_start=chosen_node.memory_usage_ratio,
             )
 
-            # 7. Mark the image as warm on this node for future placements.
-            #    The W_WARM_IMAGE=10 bonus in score_node() will now apply.
-            chosen_node.warm_images.add(task_tmpl.image_name)
-            if not was_warm:
-                print(f"[WARM]  '{task_tmpl.image_name}' is now warm on '{chosen_node.node_id}'")
-
         if all(t.state == TaskState.FINISHED for t in my_workflow.task_instances.values()):
             my_workflow.state = WorkflowState.FINISHED
             print(f"\n=== WORKFLOW {wf_id} COMPLETE ===")

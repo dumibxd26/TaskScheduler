@@ -138,8 +138,14 @@ class K8sScheduler:
         binding = client.V1Binding(target=target, metadata=meta)
 
         try:
+            # NOTE: _preload_content=False avoids a known kubernetes-client bug
+            # (kubernetes-client/python#547): the binding subresource returns
+            # an empty body on success, but the client tries to deserialize it
+            # back into V1Binding and raises "Invalid value for `target`,
+            # must not be `None`" — even though the bind already succeeded.
             self.v1.create_namespaced_pod_binding(
-                name=pod_name, namespace=NAMESPACE, body=binding
+                name=pod_name, namespace=NAMESPACE, body=binding,
+                _preload_content=False,
             )
             print(f"[BIND] Pod '{pod_name}' -> Node '{node_name}'")
         except ApiException as e:

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict, Optional
 from models.enums import TaskState, WorkflowState
 from models.workload import WorkflowInstance, WorkflowTemplate, TaskInstance
 
@@ -44,6 +44,47 @@ class ReadinessResolver:
                 ready_tasks.append(task_instance)
 
         return ready_tasks
+
+    def check_gang_readiness(self, ready_tasks: List[TaskInstance],
+                             template: WorkflowTemplate) -> List[TaskInstance]:
+        """
+        Enforce H8 gang scheduling: tasks sharing a gang_group_id must all
+        be DAG-ready before any of them can be enqueued for scheduling.
+        Non-gang tasks pass through unchanged.
+        
+        Returns the filtered list of tasks that may proceed.
+        """
+        # Partition into gang groups and independent tasks.
+        gang_groups: Dict[str, List[TaskInstance]] = {}
+        independent: List[TaskInstance] = []
+        ready_ids = {t.task_template_id for t in ready_tasks}
+
+        for task in ready_tasks:
+            tmpl = template.tasks.get(task.task_template_id)
+            if tmpl and tmpl.gang_group_id:
+                gang_groups.setdefault(tmpl.gang_group_id, []).append(task)
+            else:
+                independent.append(task)
+
+        result = list(independent)
+
+        # For each gang group, check if ALL members of the group are ready.
+        for group_id, members in gang_groups.items():
+            # Find all task_template_ids in this gang group.
+            all_gang_ids = [
+                tid for tid, t in template.tasks.items()
+                if t.gang_group_id == group_id
+            ]
+            all_ready = all(tid in ready_ids for tid in all_gang_ids)
+            if all_ready:
+                result.extend(members)
+            else:
+                # Not all gang members ready — hold them all back.
+                for task in members:
+                    print(f"[GANG] Holding '{task.task_instance_id}' — "
+                          f"gang group '{group_id}' not fully ready")
+
+        return result
 
     @staticmethod
     def check_workflow_terminal(instance: WorkflowInstance) -> bool:

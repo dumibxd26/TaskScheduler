@@ -32,13 +32,15 @@ prev_file_path = read_input("generated_file_path", "unknown")
 print(f"Starting Memory task. Received upstream path: {prev_file_path}")
 start_time = time.time()
 
-# Allocate ~600MB in RAM using 1MB string chunks
-# This is the actual memory stress — needs a MEM_OPT node (2 GB) to be safe
+# Allocate ~400 MB in RAM using 1MB string chunks.
+# Sized to fit under the 768 Mi pod limit while still being heavy enough
+# that a 768 MB-cap node (small profile's IO_OPT) cannot host it — forcing
+# the scheduler to learn that MEM_OPT / CPU_OPT are the only viable choices.
 MB = 1024 * 1024
-chunk_size_mb = 600
+chunk_size_mb = 400
 memory_hog = [b"M" * MB for _ in range(chunk_size_mb)]
 
-array_size = len(memory_hog)  # = 600
+array_size = len(memory_hog)  # = 400
 print(f"Held {array_size} MB in RAM.")
 
 # Keep it allocated to ensure the OS actually pages it in

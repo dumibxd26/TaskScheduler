@@ -104,6 +104,36 @@ class QueueManager:
                             if e.task.task_instance_id not in task_ids]
 
     # ------------------------------------------------------------------
+    # Vruntime accounting (Phase 3 — CFS-style fairness)
+    # ------------------------------------------------------------------
+    def update_vruntime(self, cluster_scenario, tick_s: float = 1.0):
+        """
+        Advance vruntime for every admitted workflow proportional to its
+        current CPU share.  Called once per tick by the engine.
+        
+        vruntime += tick_s * (cpu_used / total_cpu)
+        
+        Workflows that use more CPU advance faster and get deprioritised
+        in the next scheduling round, achieving proportional fairness.
+        """
+        total_cpu = sum(n.total_cpu for n in cluster_scenario.nodes) or 1.0
+        # Build a node lookup once to avoid O(N×M) scanning per task.
+        nodes_by_id = {n.node_id: n for n in cluster_scenario.nodes}
+        for wf in self.admitted_workflows.values():
+            cpu_used = 0.0
+            for task in wf.task_instances.values():
+                if task.state != TaskState.RUNNING or not task.assigned_node_id:
+                    continue
+                node = nodes_by_id.get(task.assigned_node_id)
+                if node is None:
+                    continue
+                rt = node.active_tasks.get(task.task_instance_id)
+                if rt:
+                    cpu_used += rt.cpu_request
+            if cpu_used > 0:
+                wf.vruntime += tick_s * (cpu_used / total_cpu)
+
+    # ------------------------------------------------------------------
     # Legacy single-pop API (kept for k8s_main.py compatibility)
     # ------------------------------------------------------------------
     def get_next_task(self):

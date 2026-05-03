@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
-from typing import List, Set, Dict, Optional
-from models.enums import NodeType
+from typing import List, Set, Dict, Optional, Tuple
+from models.enums import NodeType, CoolingClass
 import time as _time
 
 
@@ -40,6 +40,26 @@ class Node:
 
     # Live tracking of what's running on this node right now
     active_tasks: Dict[str, RunningTask] = field(default_factory=dict)
+
+    # ---- Thermal subsystem (ProblemSpecification.md §2.6, §4.1) ----
+    # Declared static capability of the node's cooling solution.
+    cooling_class: CoolingClass = CoolingClass.STANDARD
+    # Vendor-declared throttle temperature in degrees C (defaults track
+    # commodity x86 silicon — Intel/AMD client chips throttle ~95–105 C).
+    thermal_throttle_temp_c: float = 100.0
+    # Most recent observed core temperature; None means "not measurable".
+    cpu_temperature: Optional[float] = None
+
+    @property
+    def thermal_headroom(self) -> Optional[float]:
+        """
+        Degrees C remaining before the node is expected to throttle.
+        None when no temperature reading is available — caller must fall back
+        to cooling_class only (per ProblemSpec §2.6).
+        """
+        if self.cpu_temperature is None:
+            return None
+        return self.thermal_throttle_temp_c - self.cpu_temperature
 
     @property
     def cpu_usage_ratio(self) -> float:
@@ -118,3 +138,22 @@ class ClusterScenario:
     name: str
     description: str
     nodes: List[Node] = field(default_factory=list)
+
+    # ---- Bandwidth matrix (ProblemSpecification.md §2.5, §4.8) ----
+    # Pair-wise bytes/second estimates between every (producer, consumer) node pair.
+    # Populated by the BandwidthCollector (Phase 2). Until then, get_bandwidth()
+    # falls back to default_bandwidth_bytes_per_s for any missing pair.
+    bandwidth_matrix: Dict[Tuple[str, str], float] = field(default_factory=dict)
+    default_bandwidth_bytes_per_s: float = 100.0 * 1024 * 1024  # 100 MB/s
+
+    def get_bandwidth(self, producer_node_id: str, consumer_node_id: str) -> float:
+        """
+        Bytes/second between two nodes. Same node => +inf (no transfer).
+        Missing pair => default_bandwidth_bytes_per_s.
+        """
+        if producer_node_id == consumer_node_id:
+            return float("inf")
+        return self.bandwidth_matrix.get(
+            (producer_node_id, consumer_node_id),
+            self.default_bandwidth_bytes_per_s,
+        )

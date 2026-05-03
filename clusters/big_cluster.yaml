@@ -1,0 +1,130 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Big cluster — 6 workers, two of each type
+# Target host: 32+ GB workstation / laptop (64 GB recommended)
+#
+# Memory budget per container at runtime (rough, idle):
+#   control-plane  ~ 700 MB
+#   each worker    ~ 400 MB + pod headroom
+#   total idle     ~ 3 GB cluster + Docker Desktop VM overhead
+#   total under load (caps below) ~ up to 32 GB
+#
+# Use this when you want the scheduler to face actual tie-breaking decisions
+# (two CPU_OPT nodes, two MEM_OPT, two IO_OPT). Required for the defragmen-
+# tation, gang-scheduling, and bandwidth-matrix experiments later in the
+# evaluation matrix (ProblemSpecification.md §14).
+#
+# Capacity hints below (ts.capacity/*) are advisory metadata read by
+# services/k8s_cluster.py. Real CPU/memory caps are applied by
+# setup_cluster.sh via `docker update`, matching these values.
+# ─────────────────────────────────────────────────────────────────────────
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: ts-cluster
+nodes:
+  # The Control Plane (Kubernetes Brain)
+  - role: control-plane
+
+  # ── CPU-Optimised nodes (4 CPUs, 4 GB RAM each) ──
+  - role: worker
+    labels:
+      node-type: CPU_OPT
+      ts.capacity/cpu: "4.0"
+      ts.capacity/memory: "4096"
+      ts.capacity/io: "100"
+      ts.cooling-class: STANDARD
+      ts.thermal-throttle-temp-c: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-cpu-1
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data
+
+  - role: worker
+    labels:
+      node-type: CPU_OPT
+      ts.capacity/cpu: "4.0"
+      ts.capacity/memory: "4096"
+      ts.capacity/io: "100"
+      ts.cooling-class: HIGH
+      ts.thermal-throttle-temp-c: "105"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-cpu-2
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data
+
+  # ── Memory-Optimised nodes (2 CPUs, 8 GB RAM each) ──
+  - role: worker
+    labels:
+      node-type: MEM_OPT
+      ts.capacity/cpu: "2.0"
+      ts.capacity/memory: "8192"
+      ts.capacity/io: "100"
+      ts.cooling-class: STANDARD
+      ts.thermal-throttle-temp-c: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-mem-1
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data
+
+  - role: worker
+    labels:
+      node-type: MEM_OPT
+      ts.capacity/cpu: "2.0"
+      ts.capacity/memory: "8192"
+      ts.capacity/io: "100"
+      ts.cooling-class: PASSIVE
+      ts.thermal-throttle-temp-c: "95"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-mem-2
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data
+
+  # ── IO-Optimised nodes (2 CPUs, 4 GB RAM each) ──
+  - role: worker
+    labels:
+      node-type: IO_OPT
+      ts.capacity/cpu: "2.0"
+      ts.capacity/memory: "4096"
+      ts.capacity/io: "1000"
+      ts.cooling-class: STANDARD
+      ts.thermal-throttle-temp-c: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-io-1
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data
+
+  - role: worker
+    labels:
+      node-type: IO_OPT
+      ts.capacity/cpu: "2.0"
+      ts.capacity/memory: "4096"
+      ts.capacity/io: "1000"
+      ts.cooling-class: HIGH
+      ts.thermal-throttle-temp-c: "105"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-io-2
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data

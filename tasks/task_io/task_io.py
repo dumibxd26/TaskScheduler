@@ -21,9 +21,11 @@ def save_output(data: dict):
 print("Starting I/O task...")
 start_time = time.time()
 
-# Hold ~350 MB in RAM while doing IO (stresses both memory and disk)
+# Hold ~150 MB in RAM while doing IO (stresses both memory and disk).
+# Sized to fit comfortably under a 512 Mi pod limit (Python overhead + buffer
+# + 100 MB tmpfs file ≈ 320 MB peak).
 MB = 1024 * 1024
-io_buffer = [b"A" * MB for _ in range(350)]
+io_buffer = [b"A" * MB for _ in range(150)]
 print(f"Allocated {len(io_buffer)} MB buffer for IO")
 
 # Write a 100MB file to local /tmp (container-local, stresses disk IO)

@@ -33,9 +33,9 @@ array_size = int(read_input("processed_array_size", "50"))
 print(f"Starting CPU task. array_size={array_size}, computing SHA-256 hashes...")
 start_time = time.time()
 
-# Hold ~150 MB during computation to stress memory alongside CPU
+# Hold ~80 MB during computation to keep the task under its 256 Mi pod limit.
 MB = 1024 * 1024
-cpu_buffer = [b"C" * MB for _ in range(150)]
+cpu_buffer = [b"C" * MB for _ in range(80)]
 print(f"Allocated {len(cpu_buffer)} MB buffer")
 
 # Simulate CPU Load: tight SHA-256 hashing loop

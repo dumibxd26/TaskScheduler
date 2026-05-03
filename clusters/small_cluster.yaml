@@ -1,0 +1,77 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Small cluster — 3 workers, one of each type
+# Target host: Mac mini M2 / 8 GB RAM (or any 8 GB dev laptop)
+#
+# Memory budget per container at runtime (rough, idle):
+#   control-plane  ~ 700 MB
+#   each worker    ~ 350 MB + ~100 MB per running pod
+#   total idle     ~ 1.8 GB cluster + Docker Desktop VM overhead
+#
+# Heterogeneity is preserved (one of each type) so the scheduler can still
+# demonstrate node-type affinity. For large-scale tie-breaking experiments
+# use clusters/big_cluster.yaml on a 32+ GB host.
+#
+# Capacity hints below (ts.capacity/*) are advisory metadata read by
+# services/k8s_cluster.py. Real CPU/memory caps are applied by
+# setup_cluster.sh via `docker update`, matching these values.
+# ─────────────────────────────────────────────────────────────────────────
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: ts-cluster
+nodes:
+  # The Control Plane (Kubernetes Brain)
+  - role: control-plane
+
+  # ── CPU-Optimised node (2 CPUs, 1 GB RAM) ──
+  - role: worker
+    labels:
+      node-type: CPU_OPT
+      ts.capacity/cpu: "2.0"
+      ts.capacity/memory: "1024"
+      ts.capacity/io: "100"
+      ts.cooling-class: STANDARD
+      ts.thermal-throttle-temp-c: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-cpu-1
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data
+
+  # ── Memory-Optimised node (1 CPU, 1.5 GB RAM) ──
+  - role: worker
+    labels:
+      node-type: MEM_OPT
+      ts.capacity/cpu: "1.0"
+      ts.capacity/memory: "1536"
+      ts.capacity/io: "100"
+      ts.cooling-class: STANDARD
+      ts.thermal-throttle-temp-c: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-mem-1
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data
+
+  # ── IO-Optimised node (1 CPU, 768 MB RAM) ──
+  - role: worker
+    labels:
+      node-type: IO_OPT
+      ts.capacity/cpu: "1.0"
+      ts.capacity/memory: "768"
+      ts.capacity/io: "1000"
+      ts.cooling-class: STANDARD
+      ts.thermal-throttle-temp-c: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-io-1
+    extraMounts:
+      - hostPath: /tmp/ts-shared-data
+        containerPath: /ts-data

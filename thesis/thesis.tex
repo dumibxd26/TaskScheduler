@@ -1,0 +1,683 @@
+% =====================================================================
+% TaskScheduler — Diploma Project
+% University Politehnica of Bucharest, Faculty of Automatic Control and
+% Computers, Computer Science and Engineering Department.
+% =====================================================================
+\documentclass[12pt,a4paper]{report}
+
+% ---------- packages -------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{graphicx}
+\usepackage{geometry}
+\geometry{a4paper,left=3cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=black,citecolor=blue,urlcolor=blue}
+\usepackage{listings}
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\bfseries\color{blue!60!black},
+    commentstyle=\itshape\color{green!40!black},
+    stringstyle=\color{red!60!black},
+    breaklines=true,
+    showstringspaces=false,
+    frame=single,
+    framesep=4pt,
+    captionpos=b,
+    tabsize=2,
+}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,shapes.geometric,fit,backgrounds}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{enumitem}
+\usepackage{setspace}
+\onehalfspacing
+
+% ---------- per-thesis metadata --------------------------------------
+\newcommand{\Name}{<Your Full Name>}
+\newcommand{\Advisor}{<Advisor Name, e.g.\ Prof.\ dr.\ ing.\ XXXX>}
+\newcommand{\Year}{2026}
+\newcommand{\ProjectTitle}{TaskScheduler: A Heterogeneity- and Thermal-Aware
+Workflow Scheduler for Kubernetes}
+\newcommand{\ProjectSubtitle}{Two-tier scheduling with predictive ECT,
+adaptive UCB exploration, and live bandwidth/thermal telemetry}
+
+% ---------- title page template (provided by the course) -------------
+\newcommand{\HeaderLineSpace}{-0.25cm}
+\newcommand{\UniTextRO}{UNIVERSITATEA POLITEHNICA DIN BUCUREȘTI \\[\HeaderLineSpace]
+FACULTATEA DE AUTOMATICĂ ȘI CALCULATOARE \\[\HeaderLineSpace]
+DEPARTAMENTUL DE CALCULATOARE\\}
+\newcommand{\DiplomaRO}{PROIECT DE DISERTAȚIE}
+\newcommand{\AdvisorRO}{Coordonator științific:}
+\newcommand{\BucRO}{BUCUREȘTI}
+
+\newcommand{\UniTextEN}{UNIVERSITY POLITEHNICA OF BUCHAREST \\[\HeaderLineSpace]
+FACULTY OF AUTOMATIC CONTROL AND COMPUTERS \\[\HeaderLineSpace]
+COMPUTER SCIENCE AND ENGINEERING DEPARTMENT\\}
+\newcommand{\DiplomaEN}{DIPLOMA PROJECT}
+\newcommand{\AdvisorEN}{Thesis advisor:}
+\newcommand{\BucEN}{BUCHAREST}
+
+\newcommand{\frontPage}[6]{
+\begin{titlepage}
+\begin{center}
+{\Large #1}
+\vspace{50pt}
+\begin{tabular}{p{6cm}p{4cm}}
+\includegraphics[scale=0.8]{pics/upb-logo.jpg} &
+    \includegraphics[scale=0.5,trim={14cm 11cm 2cm 5cm},clip=true]{pics/cs-logo.pdf}
+\end{tabular}
+
+\vspace{105pt}
+{\Huge #2}\\
+\vspace{40pt}
+{\Large #3}\\ \vspace{0pt}
+{\Large #4}\\
+\vspace{40pt}
+{\LARGE \Name}\\
+\end{center}
+\vspace{60pt}
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}p{6cm}r}
+&{\large\textbf{#5}}\vspace{10pt}\\
+&{\large \Advisor}
+\end{tabular*}
+\vspace{20pt}
+\begin{center}
+{\large\textbf{#6}}\\
+\vspace{0pt}
+{\normalsize \Year}
+\end{center}
+\end{titlepage}
+}
+
+% =====================================================================
+\begin{document}
+
+\frontPage{\UniTextEN}{\DiplomaEN}{\ProjectTitle}{\ProjectSubtitle}{\AdvisorEN}{\BucEN}
+
+% ---------- abstract -------------------------------------------------
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+Modern data-processing pipelines run on increasingly heterogeneous
+infrastructure: clusters mix CPU-optimised, memory-optimised and
+I/O-optimised nodes, run on a variety of CPU architectures (e.g.\
+\texttt{amd64} and \texttt{arm64}), and operate under thermal limits
+that the default Kubernetes scheduler is unaware of. This project
+proposes \emph{TaskScheduler}, a workflow-aware scheduler for
+Kubernetes that places tasks using a predictive estimate of effective
+completion time (ECT) refined by live measurements of inter-node
+bandwidth and per-node CPU temperature, and that explores the
+scheduling space using a UCB-style adaptive policy.
+
+TaskScheduler is implemented as a standard Kubernetes control plane:
+a CRD-driven controller (\texttt{ts-controller}) materialises workflow
+DAGs into Pods, a custom scheduler (\texttt{ts-scheduler}) binds those
+Pods to nodes, and three DaemonSets supply the producer-local data
+plane (\texttt{ts-fileserver}) and the telemetry signals
+(\texttt{ts-bw-probe}, \texttt{ts-thermal}) consumed by the policy.
+The system is validated both in a deterministic simulator
+(25/25 unit tests) and on a two-host \texttt{k3s} cluster spanning
+\texttt{amd64} and \texttt{arm64} hosts, where it can be compared
+against the default Kubernetes scheduler under identical workloads.
+
+\vspace{1em}
+\noindent\textbf{Keywords:} Kubernetes, workflow scheduling,
+heterogeneous clusters, thermal-aware scheduling, bandwidth-aware
+scheduling, UCB, ECT, CRDs, k3s.
+
+% ---------- table of contents ----------------------------------------
+\tableofcontents
+
+% =====================================================================
+\chapter{Introduction}
+\label{ch:intro}
+
+\section{Subject and context}
+Workflow scheduling on Kubernetes is dominated by the cluster's default
+scheduler, which optimises for resource fit and basic affinity
+constraints but treats nodes as essentially interchangeable. In
+practice, modern clusters are far from uniform: some nodes have many
+fast CPU cores but little memory, others the opposite; some sit behind
+a passively cooled enclosure and throttle quickly under sustained
+load; some are physically far enough from the workflow's data
+producer that the network becomes the bottleneck. The default
+scheduler has no visibility into any of these signals.
+
+This project addresses that gap for the specific case of
+\emph{data-processing pipelines} expressed as directed acyclic graphs
+(DAGs) of tasks. The system, called \emph{TaskScheduler}, treats each
+workflow as a first-class object (a Kubernetes Custom Resource), tracks
+its tasks through their full lifecycle, and binds them to nodes using a
+policy that combines structural information (the DAG, node profiles)
+with live telemetry (inter-node bandwidth, CPU temperature).
+
+\section{Motivation}
+The motivation is twofold.
+
+\textbf{Practical.} Containerised workflows are now the dominant way of
+expressing batch and stream pipelines in research and industry
+(scientific simulation, ETL, ML training preprocessing, CI), and
+Kubernetes is the dominant orchestrator. Yet the default scheduler's
+choices are often visibly suboptimal on heterogeneous clusters --- a
+memory-heavy task may be placed on the fastest CPU node simply because
+it was first to be considered, leaving the memory-optimised node idle
+or, worse, occupied by an unrelated CPU task. Even small placement
+improvements compound across DAGs with tens or hundreds of tasks.
+
+\textbf{Scientific.} ECT-style estimation, multi-armed-bandit
+exploration (UCB), and thermal awareness have each been studied
+individually in the scheduling literature, but rarely combined and
+almost never integrated cleanly into Kubernetes' control loop. The
+present project examines whether the three signals reinforce each
+other, and whether the resulting policy beats both the default
+Kubernetes scheduler and simpler heuristics (random, round-robin,
+best-fit) on realistic mixed workloads.
+
+\section{Objectives}
+The project pursues the following concrete objectives:
+\begin{enumerate}[label=O\arabic*., leftmargin=*]
+    \item Design a workflow-aware scheduling model that captures
+    node heterogeneity (CPU/memory/IO profile, cooling class,
+    architecture) and DAG structure (upward rank, critical path).
+    \item Define an effective-completion-time estimator
+    $\widehat{\mathrm{ECT}}(\tau, n \mid A)$ that takes the current
+    assignment context $A$ (parent placements, data sizes) into
+    account.
+    \item Combine ECT with an adaptive UCB exploration policy so the
+    scheduler keeps refining its priors during operation rather than
+    relying solely on offline profiles.
+    \item Integrate live signals --- inter-node bandwidth and per-node
+    CPU temperature --- into the scoring function $J(A)$.
+    \item Implement the scheduler as a clean Kubernetes deployment
+    (CRDs, controller, custom scheduler, DaemonSets) rather than a
+    monolithic process, so that it can be deployed on real clusters.
+    \item Validate the implementation end-to-end on a two-host
+    \texttt{k3s} cluster spanning two CPU architectures, and compare
+    it against the default Kubernetes scheduler under identical
+    workloads.
+\end{enumerate}
+
+\section{Expected impact}
+If the proposed policy is shown to consistently reduce workflow
+makespan or improve fairness on heterogeneous clusters relative to
+the default scheduler --- without requiring intrusive changes to user
+workloads --- it offers a directly deployable improvement to a very
+widely used piece of cluster software. Even a negative or partial
+result is useful: it would clarify which of the three signals (ECT,
+UCB, thermal) carry weight in practice and which can be dropped to
+simplify the system.
+
+% =====================================================================
+\chapter{State of the art (optional)}
+\label{ch:sota}
+
+\emph{This chapter is intentionally short; the depth will be expanded
+during the final write-up. It briefly situates the work relative to
+the most directly relevant prior research.}
+
+\paragraph{Heterogeneous scheduling.} HEFT~\cite{topcuoglu2002heft}
+introduced the use of \emph{upward rank} on the DAG combined with an
+earliest-finish-time placement rule on heterogeneous processors, and
+remains the canonical baseline for workflow schedulers. Many later
+variants extend HEFT with stochastic execution times, energy budgets,
+or cloud-style pricing.
+
+\paragraph{Bandit-style schedulers.} Multi-armed-bandit and UCB-style
+exploration~\cite{auer2002ucb} have been used to learn execution-time
+priors online; their appeal is that they give a principled answer to
+the exploration/exploitation trade-off without requiring a model of
+the cluster.
+
+\paragraph{Thermal-aware scheduling.} Hot nodes throttle, so placing
+work on a cool node can finish faster even when the cool node is
+nominally slower. Recent work on edge and mobile clusters has shown
+measurable gains from incorporating temperature into placement.
+
+\paragraph{Kubernetes-native schedulers.} The Kubernetes scheduler
+framework allows plugins to inject scoring logic into the default
+binder; alternatively, a custom scheduler can run alongside the
+default one, claiming Pods whose \texttt{spec.schedulerName} matches
+its own. This project takes the latter approach because it allows
+the full ECT + UCB + thermal policy to be expressed cleanly outside
+the default scheduler's plugin model.
+
+\paragraph{Workflow controllers.} Argo Workflows and similar tools
+demonstrate the CRD-driven controller pattern for DAG execution.
+TaskScheduler uses the same pattern, but pairs it with a custom
+\emph{scheduler}; the controller is intentionally thin.
+
+% =====================================================================
+\chapter{Project model}
+\label{ch:model}
+
+This chapter describes the architecture of TaskScheduler, the
+scheduling algorithm, and the live signals it consumes.
+
+\section{High-level architecture}
+TaskScheduler runs entirely inside Kubernetes as four cooperating
+components and three DaemonSets (Figure~\ref{fig:arch}):
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Workflow CRD} --- a user submits a workflow as
+    a Kubernetes object containing the DAG, the per-task templates
+    and the workflow-level metadata (priority, deadline).
+    \item \textbf{\texttt{ts-controller} (Deployment).} Watches
+    Workflow CRDs, expands the DAG into Pods, sets
+    \texttt{schedulerName=ts-scheduler}, scrapes
+    \texttt{\_\_TS\_OUTPUT\_\_=} lines from finished pods' logs and
+    injects them as environment variables on downstream pods.
+    \item \textbf{\texttt{ts-scheduler} (Deployment).} Watches Pending
+    Pods whose \texttt{schedulerName} is \texttt{ts-scheduler}, runs
+    the policy described in \S\ref{sec:algo}, and binds each Pod to a
+    node.
+    \item \textbf{Data plane DaemonSet (\texttt{ts-fileserver}).}
+    Exposes per-node outputs at \texttt{http://<node>:8080} so that
+    downstream tasks running on a different node can fetch parent
+    outputs.
+    \item \textbf{Telemetry DaemonSets.} \texttt{ts-bw-probe} measures
+    inter-node bandwidth every 10\,min and writes
+    \texttt{ts.io/bw-to-<peer>=<MB/s>} as Node annotations.
+    \texttt{ts-thermal} reads
+    \texttt{/sys/class/thermal/thermal\_zone0/temp} every 30\,s and
+    writes \texttt{ts.io/cpu-temp-c}.
+\end{enumerate}
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    node distance=8mm,
+    box/.style={draw, rounded corners, align=center,
+        minimum width=3.2cm, minimum height=1cm, font=\small},
+    ds/.style={box, fill=blue!8},
+    cp/.style={box, fill=orange!12},
+    arr/.style={-{Stealth}, thick}
+  ]
+    \node[cp] (ctrl) {\texttt{ts-controller}\\(Deployment)};
+    \node[cp, right=20mm of ctrl] (sched) {\texttt{ts-scheduler}\\(Deployment)};
+    \node[box, above=10mm of $(ctrl)!0.5!(sched)$] (crd) {Workflow CRD\\(user input)};
+
+    \node[ds, below=12mm of ctrl, xshift=-15mm] (fs)   {\texttt{ts-fileserver}\\DaemonSet};
+    \node[ds, below=12mm of ctrl, xshift=20mm] (bw)    {\texttt{ts-bw-probe}\\DaemonSet};
+    \node[ds, below=12mm of sched, xshift=20mm] (th)   {\texttt{ts-thermal}\\DaemonSet};
+
+    \draw[arr] (crd) -- (ctrl);
+    \draw[arr] (ctrl) -- node[above,font=\scriptsize]{Pods} (sched);
+    \draw[arr] (sched.south) -- ++(0,-4mm) -| node[pos=0.25,above,font=\scriptsize]{bind} (bw.north);
+    \draw[arr] (fs.north) -- node[right,font=\scriptsize]{outputs} (ctrl.south);
+    \draw[arr] (bw.east) -- ++(8mm,0) |- node[pos=0.25,right,font=\scriptsize]{bw} (sched.east);
+    \draw[arr] (th.north) -- node[right,font=\scriptsize]{temp} (sched.south);
+\end{tikzpicture}
+\caption{High-level architecture: a thin controller, a custom
+scheduler, and three DaemonSets supplying data plane and telemetry.}
+\label{fig:arch}
+\end{figure}
+
+\section{Two-tier scheduling: from workflows to tasks}
+The scheduler operates at two levels of granularity:
+\begin{enumerate}
+    \item \textbf{Workflow level.} Each workflow accumulates virtual
+    runtime $v_w$ (CFS-style); the next workflow to admit a task is
+    the one with the smallest $v_w$, ensuring long-term fairness
+    across concurrently submitted workflows.
+    \item \textbf{Task level.} Within the chosen workflow, the next
+    Pending task is the one with the largest \emph{upward rank}
+    --- the longest weighted path from that task to any DAG sink ---
+    so that critical-path tasks are placed first.
+\end{enumerate}
+This decoupling is the same idea HEFT uses, generalised to the
+multi-workflow case.
+
+\section{Scoring function and ECT}
+\label{sec:algo}
+Given a candidate (task $\tau$, node $n$) under the partial assignment
+$A$ already in place, the scheduler estimates the effective completion
+time:
+\begin{equation}
+\widehat{\mathrm{ECT}}(\tau, n \mid A) =
+\max\bigl(t_{\text{ready}}(n),\;
+          \max_{p \in \text{parents}(\tau)} t_{\text{done}}(p)
+          + \mathrm{transfer}(p, n \mid A)\bigr)
++ \mathrm{exec}(\tau, n),
+\label{eq:ect}
+\end{equation}
+where $\mathrm{transfer}(p, n \mid A)$ uses the live
+\texttt{ts.io/bw-to-<peer>} annotation when $p$'s placement is
+already decided, and $\mathrm{exec}(\tau, n)$ uses the per-profile
+priors maintained by the UCB layer.
+
+The placement objective is then
+\begin{equation}
+J(A) = \widehat{\mathrm{ECT}}(\tau, n \mid A)
+     + \lambda_{\text{therm}} \cdot \mathrm{penalty}_{\text{therm}}(n)
+     + \lambda_{\text{fail}}  \cdot \mathrm{penalty}_{\text{fail}}(n)
+     - \beta_{\text{ucb}} \cdot \mathrm{bonus}_{\text{ucb}}(\tau, n),
+\label{eq:J}
+\end{equation}
+which the scheduler \emph{minimises} over the set of feasible
+candidate nodes. The thermal penalty rises sharply once the node's
+recent average CPU temperature crosses an envelope; the UCB bonus
+falls as a node accumulates samples for a given task profile.
+
+\section{Live signals}
+Two signals are collected continuously by DaemonSets:
+\begin{description}[leftmargin=*]
+    \item[Inter-node bandwidth.] \texttt{ts-bw-probe} on each node
+    fetches the \texttt{\_probe.bin} file (100\,MB) from every peer's
+    \texttt{ts-fileserver}, divides size by elapsed time, and writes
+    \texttt{ts.io/bw-to-<peer>=<MB/s>} to its own Node object.
+    Refreshed every 10\,min. Consumed by
+    \texttt{services/bandwidth.py}.
+    \item[CPU temperature.] \texttt{ts-thermal} reads
+    \texttt{/sys/class/thermal/thermal\_zone0/temp} on Linux and falls
+    back to a load-average proxy on hosts without sysfs thermals
+    (e.g.\ Multipass VMs on macOS). Refreshed every 30\,s.
+    Consumed by \texttt{services/thermal.py} and by the
+    \texttt{AdaptivePolicy}.
+\end{description}
+
+\section{Producer-local data plane}
+Each node owns a host-path directory \texttt{/var/lib/ts-data} that
+the controller mounts into every worker Pod at \texttt{/data/outputs}.
+Same-node parents are read through that mount with no network
+involvement. For cross-node parents, the controller injects
+\texttt{TS\_PARENT\_<NAME>\_FILESERVER\_URL} so the task script can
+\texttt{curl} the parent's output through the producer's
+\texttt{ts-fileserver}. This is intentionally simple: no shared
+filesystem, no object store --- the data plane and the bandwidth
+signal share exactly the same path, so they stay consistent.
+
+\section{Adaptive policy}
+The policy itself is selected via the \texttt{TS\_POLICY} environment
+variable on the scheduler Deployment. The default value
+\texttt{adaptive} enables the full ECT + UCB + thermal scoring of
+Eq.~\ref{eq:J}. Setting \texttt{random}, \texttt{round-robin} or
+\texttt{best-fit} switches in simpler baselines, which is what makes
+controlled A/B comparisons against the default Kubernetes scheduler
+feasible.
+
+% =====================================================================
+\chapter{Research methodology}
+\label{ch:method}
+
+\section{Implementation as the foundation}
+A working implementation is treated as a prerequisite for any
+quantitative claim; the simulator and the cluster are not afterthoughts
+but the core methodological apparatus. Two execution surfaces are
+maintained in parallel:
+
+\begin{enumerate}[leftmargin=*]
+    \item A \textbf{discrete-event simulator}
+    (\texttt{run\_simulation.py}, \texttt{engine.py}) that runs the
+    same policy code path against a synthetic cluster and synthetic
+    workflows. It is deterministic, fast (entire batches finish in
+    seconds), and is the regression harness: 25 unit tests in
+    \texttt{test\_simulation.py} pin the algorithm's invariants.
+    \item A \textbf{real Kubernetes cluster}, deployed in two
+    configurations:
+    \begin{enumerate}[label=(\alph*)]
+        \item single-host \texttt{kind} with three worker nodes, used
+        for smoke tests and CI;
+        \item two-host \texttt{k3s} (described in \S\ref{sec:topo}),
+        used for the actual measurements.
+    \end{enumerate}
+\end{enumerate}
+
+\section{Experimental topology}
+\label{sec:topo}
+The two-host cluster spans two physically distinct machines on the
+same gigabit LAN, providing a real network hop (essential for the
+bandwidth signal to mean anything) and two CPU architectures
+(essential to confirm the system actually works on heterogeneous
+hardware).
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{lll>{\raggedright\arraybackslash}p{6.2cm}}
+\toprule
+\textbf{Role} & \textbf{Host} & \textbf{Arch} & \textbf{Logical k8s nodes} \\
+\midrule
+Master & Mac mini M2, 8\,GB (macOS + Multipass) & arm64 &
+\texttt{ts-master} (control plane + scheduler + registry, MEM\_OPT, PASSIVE) \\
+Worker & Laptop, Ryzen 7 PRO 8840HS, 64\,GB (Windows + Multipass) & amd64 &
+\texttt{ts-node-cpu-1}, \texttt{ts-node-cpu-2} (CPU\_OPT), \texttt{ts-node-io-1} (IO\_OPT), \texttt{ts-node-mem-1} (MEM\_OPT) \\
+\bottomrule
+\end{tabular}
+\caption{Two-host \texttt{k3s} topology. Five logical nodes across two
+physical machines and two CPU architectures. The arm64 master runs
+inside a Linux VM on macOS; the four amd64 workers run inside Linux
+VMs on Windows.}
+\label{tab:topo}
+\end{table}
+
+The \texttt{ts-scheduler} runs on the master; the Mac mini is purely a
+worker, which both reflects a realistic deployment and confirms that
+the scheduler does not need to be co-located with the workload.
+
+\section{Workload}
+A representative workload mix is used in all experiments. It contains:
+\begin{itemize}[leftmargin=*]
+    \item \emph{CPU-bound} tasks (\texttt{tasks/task\_cpu}) that
+    iterate a tight numeric loop;
+    \item \emph{Memory-bound} tasks (\texttt{tasks/task\_mem}) that
+    allocate and touch large buffers;
+    \item \emph{I/O-bound} tasks (\texttt{tasks/task\_io}) that fetch
+    or write large files through the data plane.
+\end{itemize}
+DAG shapes range from linear pipelines (\texttt{linear-pipeline-1}) to
+fan-out/fan-in topologies that exercise cross-node parent-to-child
+data transfers.
+
+\section{Comparison protocol}
+Every experiment is run twice against the same workload and the same
+cluster: once with \texttt{schedulerName=ts-scheduler}
+(\texttt{TS\_POLICY=adaptive}), and once with the workflow's Pods
+left to the default Kubernetes scheduler. Each pair is repeated
+$n=10$ times to obtain confidence intervals. Random seeds and probe
+schedules are controlled so the two halves of a pair see the same
+cluster state.
+
+\section{Reproducibility}
+The full setup is automated:
+\texttt{make k3s-server} and \texttt{make k3s-agent} build the cluster
+on the two hosts, \texttt{make images-multiarch} cross-builds all
+seven container images for \texttt{amd64+arm64} and pushes them to a
+LAN registry, and \texttt{make verify-cluster-run} executes the
+end-to-end sanity check including a workflow run. All scripts are
+idempotent and tear-down is one command (\texttt{make k3s-uninstall}).
+The full source --- including this document --- is versioned in Git.
+
+% =====================================================================
+\chapter{Contributions}
+\label{ch:contrib}
+
+\section{Theoretical contributions}
+\begin{enumerate}[leftmargin=*]
+    \item A \emph{two-tier} scheduling formulation that combines
+    CFS-style workflow-level fairness (vruntime) with HEFT-style
+    task-level criticality (upward rank), so that multiple workflows
+    can be scheduled concurrently without starvation while each
+    workflow still respects its own critical path.
+    \item An \emph{ECT estimator}
+    $\widehat{\mathrm{ECT}}(\tau, n \mid A)$ (Eq.~\ref{eq:ect}) that
+    is computed against the \emph{current} partial assignment $A$,
+    using live bandwidth annotations to refine the transfer term and
+    UCB-maintained priors for the execution term.
+    \item A unified \emph{scoring function} $J(A)$ (Eq.~\ref{eq:J})
+    that combines ECT with thermal and failure penalties and a UCB
+    exploration bonus.
+\end{enumerate}
+
+\section{Practical contributions}
+\begin{enumerate}[leftmargin=*]
+    \item A complete, production-shaped Kubernetes deployment:
+    a Workflow CRD, a controller, a custom scheduler, and three
+    DaemonSets, packaged as plain manifests under \texttt{manifests/}.
+    The CRDs and the controller/scheduler split mean the system can
+    coexist with any other Kubernetes workload on the same cluster.
+    \item A \emph{producer-local data plane} that sidesteps the need
+    for a shared filesystem: parents write to a host-path,
+    \texttt{ts-fileserver} re-exposes that path over HTTP, and the
+    controller injects per-parent URLs into child Pods.
+    \item Two telemetry signals integrated as Node annotations
+    rather than as a separate metrics system, so any Kubernetes
+    client can read them with a single \texttt{kubectl get nodes}.
+    \item Multi-architecture container images
+    (\texttt{linux/amd64} + \texttt{linux/arm64}) built via
+    \texttt{docker buildx} and a LAN-local insecure registry,
+    enabling the same images to run on a Ryzen laptop and on an
+    Apple-silicon Mac mini.
+    \item A reproducible experimental harness: \texttt{cluster.env},
+    three idempotent setup scripts (\texttt{k3s-server.sh},
+    \texttt{k3s-agent.sh}, \texttt{k3s-uninstall.sh}), and a
+    \texttt{verify-cluster.sh} health-check that confirms every
+    invariant (nodes Ready, labels applied, DaemonSets covering every
+    node, bandwidth and thermal annotations populated, an end-to-end
+    workflow finishing).
+    \item A simulator that runs the \emph{same} policy code on a
+    synthetic cluster, giving cheap regression coverage (25/25 unit
+    tests) and an easy way to A/B different policies before deploying
+    them on the real cluster.
+\end{enumerate}
+
+% =====================================================================
+\chapter{Performance analysis metrics}
+\label{ch:metrics}
+
+The evaluation uses the following metrics, all computed per workflow
+and aggregated across runs:
+
+\begin{description}[leftmargin=*]
+    \item[Makespan ($M_w$).] Wall-clock time from the first Pod of
+    workflow $w$ entering the \texttt{Pending} phase to the last Pod
+    of $w$ reaching \texttt{Succeeded}. Primary headline metric.
+    \item[Per-task slowdown ($s_\tau$).]
+    $s_\tau = T_\tau / T_\tau^{\text{best}}$, where $T_\tau^{\text{best}}$
+    is the execution time the same task achieves alone on its
+    profile-matched node. Captures how much each task suffered from
+    placement choices.
+    \item[Critical-path stretch.] Ratio of observed makespan to the
+    DAG's critical-path length using profile-matched execution times.
+    Decouples policy quality from raw cluster capacity.
+    \item[Fairness across workflows.] Jain's fairness index applied
+    to per-workflow normalised makespan in multi-workflow runs.
+    \item[Thermal exposure.]
+    $\mathrm{TE}(n) = \int (\max(0, T_{\mathrm{cpu}}(n,t) - T_{\text{env}}))\,dt$
+    integrated over the run. Captures how aggressively the policy
+    pushes any single node.
+    \item[Bandwidth utilisation.] Mean and 95th percentile of the
+    actual data-transfer volume on each inter-node edge, compared
+    against the bandwidth measured by \texttt{ts-bw-probe}.
+    \item[Cross-node ratio.] Fraction of parent$\to$child edges in
+    the DAG for which the child ran on a different node than the
+    parent. Lower is better when transfers are large; the policy
+    should trade this off against ECT.
+    \item[Scheduling latency.] Time from Pod \texttt{Pending} to Pod
+    \texttt{Scheduled}. The custom scheduler must not be noticeably
+    slower than the default scheduler.
+    \item[Failure / retry count.] Number of Pod failures and how
+    quickly the scheduler avoids the failing node afterwards.
+\end{description}
+
+Each metric is reported as mean $\pm$ 95\,\% CI over the ten repeats
+of each (policy, workload) pair, with TaskScheduler and the default
+Kubernetes scheduler side by side.
+
+% =====================================================================
+\chapter{Results}
+\label{ch:results}
+
+\emph{This chapter is intentionally left empty for now; it will be
+filled once the planned experiments on the two-host cluster are
+complete. The expected structure mirrors the metrics defined in
+Chapter~\ref{ch:metrics}: one section per metric, presenting
+TaskScheduler against the default Kubernetes scheduler under
+identical workloads, with mean and 95\,\% CI and a short discussion of
+the observed differences.}
+
+\section{Makespan}
+% TODO: fill after experiments
+
+\section{Per-task slowdown and critical-path stretch}
+% TODO: fill after experiments
+
+\section{Fairness across concurrent workflows}
+% TODO: fill after experiments
+
+\section{Thermal exposure and bandwidth utilisation}
+% TODO: fill after experiments
+
+\section{Scheduling latency and overhead}
+% TODO: fill after experiments
+
+\section{Discussion}
+% TODO: fill after experiments
+
+% =====================================================================
+\chapter{Conclusion and further work}
+\label{ch:conclusion}
+
+\section{Summary}
+This project designed and implemented TaskScheduler, a workflow-aware,
+heterogeneity- and thermal-aware scheduler for Kubernetes, and built
+the experimental harness needed to evaluate it. The system is
+deployable as a regular Kubernetes workload (CRDs, a controller, a
+custom scheduler, and three DaemonSets) and has been validated
+end-to-end on a two-host \texttt{k3s} cluster spanning \texttt{amd64}
+and \texttt{arm64} hardware.
+
+\section{Further research}
+Several extensions are natural and were deliberately kept out of scope
+of this thesis:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Energy- and cost-aware scoring} --- the same $J(A)$
+    framework can absorb a per-node energy or cost term once metering
+    is available.
+    \item \textbf{Preemption} --- the current scheduler does not
+    preempt; adding HEFT-style task migration could improve makespan
+    under sudden thermal events.
+    \item \textbf{Federated clusters} --- exposing the Workflow CRD
+    through KubeFed or a similar layer would let a single workflow
+    span clusters with different policies.
+    \item \textbf{Learned ECT estimators} --- replacing the
+    profile-based execution priors with a small online regressor
+    that takes task features as input.
+\end{itemize}
+
+\section{Closing remarks}
+TaskScheduler's main contribution is showing that the three signals
+(ECT, UCB, thermal) can be combined cleanly inside a real Kubernetes
+control plane, not just in a simulator. The empirical evaluation in
+Chapter~\ref{ch:results} will determine how much each of those
+signals actually buys in practice.
+
+% =====================================================================
+\begin{thebibliography}{9}
+\bibitem{topcuoglu2002heft}
+H.~Topcuoglu, S.~Hariri, and M.-Y. Wu,
+\emph{Performance-effective and low-complexity task scheduling for
+heterogeneous computing}, IEEE Trans. on Parallel and Distributed
+Systems, 13(3):260--274, 2002.
+
+\bibitem{auer2002ucb}
+P.~Auer, N.~Cesa-Bianchi, and P.~Fischer,
+\emph{Finite-time analysis of the multiarmed bandit problem},
+Machine Learning, 47(2--3):235--256, 2002.
+
+\bibitem{kubernetes}
+The Kubernetes Authors, \emph{Kubernetes documentation},
+\url{https://kubernetes.io/docs/}, accessed 2026.
+
+\bibitem{k3s}
+Rancher Labs, \emph{k3s: Lightweight Kubernetes},
+\url{https://k3s.io/}, accessed 2026.
+\end{thebibliography}
+
+\end{document}

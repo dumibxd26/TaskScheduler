@@ -68,66 +68,91 @@ measurements. This is what the algorithm is designed for.
 
 | Role   | Host                              | OS               | Logical k8s nodes                                              |
 |--------|-----------------------------------|------------------|----------------------------------------------------------------|
-| Master | **pc1** — Ryzen 7 PRO 8840HS / 64 GB | Linux            | `ts-pc1` (control-plane) + `ts-node-cpu-1`, `ts-node-cpu-2`, `ts-node-io-1` (Multipass VMs) |
-| Slave  | **pc2** — Mac mini M2 / 8 GB      | macOS + Multipass VM | `ts-node-mem-1` (single VM, MEM_OPT, PASSIVE cooling, arm64) |
+| **Master** | **pc1** — Mac mini M2 / 8 GB      | macOS + Multipass VM | `ts-master` (control plane + scheduler + registry, MEM_OPT, PASSIVE, arm64) |
+| Worker | **pc2** — Ryzen 7 PRO 8840HS / 64 GB | Windows + Multipass VMs | `ts-node-cpu-1` (CPU_OPT, HIGH) + `ts-node-cpu-2` (CPU_OPT) + `ts-node-io-1` (IO_OPT) + `ts-node-mem-1` (MEM_OPT) — all amd64 |
 
-Five logical nodes, two physical machines, two CPU architectures (amd64
-+ arm64), one apiserver. The `ts-scheduler` runs on **pc1** (the master);
-the Mac mini is purely a worker. There's exactly one k3s server in the
-cluster — it lives on pc1.
+Five logical nodes, two physical machines, two CPU architectures
+(arm64 master + amd64 workers), one apiserver. The `ts-scheduler` lives
+on **pc1** inside the `ts-master` VM. Because neither macOS nor Windows
+runs k3s natively, every k3s process — server and agents — runs inside
+a Multipass Linux VM. The cross-host LAN hop between the Mac mini's
+master VM and the laptop's worker VMs is what gives `ts-bw-probe` real
+measurements.
 
 ### Prerequisites
 
-- pc1: Linux with sudo, `curl`, `docker`, and `multipass`
-  (`sudo snap install multipass` on Ubuntu).
-- pc2: macOS with `multipass` (`brew install multipass`) and `docker`
-  (optional — only needed if you want to build images locally on pc2).
-- Both machines on the same LAN, ports `6443/tcp`, `8080/tcp`,
-  `5000/tcp`, `8472/udp`, `10250/tcp` open between them.
+- **pc1 (Mac mini, macOS)**: `multipass` (`brew install --cask multipass`)
+  and `kubectl` (`brew install kubectl`). Multipass must be configured
+  with a bridged network so the master VM gets a LAN IP reachable from
+  pc2:
 
-### Step 1 — Configure IPs (both machines)
+  ```sh
+  multipass networks                              # list available host interfaces
+  multipass set local.bridged-network=en1         # use your active wifi/ethernet iface
+  ```
+
+- **pc2 (Windows laptop)**: Multipass for Windows (installer from
+  multipass.run), Hyper-V enabled (built into Windows Pro), and either
+  **Git Bash** (comes with Git for Windows) or **WSL2** so you can run
+  the shell scripts. From either shell, the `multipass` command must
+  be on `PATH`.
+
+- LAN firewall: ports `6443/tcp` (apiserver), `5000/tcp` (registry),
+  `8472/udp` (flannel VXLAN), `10250/tcp` (kubelet), `8080/tcp`
+  (fileserver) open between the two machines.
+
+### Step 1 — Bring up the master (pc1, Mac mini)
 
 ```sh
 cp cluster.env.example cluster.env
-# Edit SERVER_IP=<pc1 LAN IP>, PC2_HOST_IP=<pc2 LAN IP>, CLUSTER_TOKEN=<any string>
-```
+# Edit only PC1_HOST_IP and PC2_HOST_IP for documentation; leave
+# SERVER_IP untouched — the script overwrites it with the master VM's
+# bridged LAN IP after launch.
 
-Both machines must share the same `cluster.env` (`scp` it from pc1 to pc2).
-
-### Step 2 — Bring up the master (pc1)
-
-```sh
-# On pc1:
-make k3s-server           # installs k3s, labels nodes, starts registry,
-                          # spawns 3 logical worker VMs
+make k3s-server
+# - launches Multipass VM ts-master (bridged, 3 CPU, 4 GB)
+# - installs k3s server inside it
+# - starts insecure Docker registry on :5000 inside it
+# - writes SERVER_IP back into cluster.env
+# - copies kubeconfig to ~/.kube/config (rewritten to use SERVER_IP)
+# - labels ts-master with node-type=MEM_OPT, cooling=PASSIVE
 
 kubectl get nodes -L node-type -L ts.cooling-class
-# NAME             STATUS   ROLES                  NODE-TYPE   TS.COOLING-CLASS
-# ts-pc1           Ready    control-plane,master   CPU_OPT     STANDARD
-# ts-node-cpu-1    Ready    <none>                 CPU_OPT     HIGH
-# ts-node-cpu-2    Ready    <none>                 CPU_OPT     STANDARD
-# ts-node-io-1     Ready    <none>                 IO_OPT      STANDARD
+# NAME        STATUS   ROLES                  NODE-TYPE   TS.COOLING-CLASS
+# ts-master   Ready    control-plane,master   MEM_OPT     PASSIVE
 ```
 
-### Step 3 — Join the slave (pc2)
+### Step 2 — Join the workers (pc2, Windows laptop)
+
+Open **Git Bash** (or a WSL2 shell), then:
 
 ```sh
-# Copy cluster.env from pc1 to pc2 first:
-scp cluster.env pc2:/path/to/TaskScheduler/
+# 1. Get the updated cluster.env onto pc2 — easiest path:
+scp <mac-user>@<PC1_HOST_IP>:/Volumes/HDD/projects/TaskScheduler/cluster.env .
 
-# On pc2 (Mac mini):
-make k3s-agent            # spawns a Linux VM, installs k3s agent inside,
-                          # joins https://${SERVER_IP}:6443
+# 2. Spawn all 4 worker VMs and join them to the master:
+./scripts/k3s-agent.sh
+# - launches ts-node-cpu-1, ts-node-cpu-2, ts-node-io-1, ts-node-mem-1
+# - installs k3s agent in each
+# - prints kubectl label commands for you to paste on pc1
 ```
 
-Back on pc1:
+Back on **pc1** (Mac mini), confirm all five nodes are Ready and apply
+the label commands the agent script printed:
 
 ```sh
 kubectl get nodes
-# ts-node-mem-1 should now also be Ready.
+# ts-master, ts-node-cpu-1, ts-node-cpu-2, ts-node-io-1, ts-node-mem-1
+# all Ready.
+
+# Paste the 4 kubectl label commands that pc2's script printed
+# (one per worker node).
 ```
 
-### Step 4 — Build and push multi-arch images (pc1)
+### Step 3 — Build and push multi-arch images (pc1)
+
+The master is arm64 (Mac mini) and the workers are amd64 (Windows
+laptop), so images **must** be multi-arch:
 
 ```sh
 # One-time buildx setup:
@@ -138,10 +163,7 @@ docker buildx inspect --bootstrap
 make images-multiarch
 ```
 
-(If you don't need cross-arch — e.g. both machines are amd64 — `make
-images push` is enough.)
-
-### Step 5 — Install the platform (pc1)
+### Step 4 — Install the platform (pc1)
 
 ```sh
 make install-remote
@@ -149,7 +171,7 @@ make install-remote
 # applies manifests, waits for rollouts.
 ```
 
-### Step 6 — Run a workflow
+### Step 5 — Run a workflow
 
 ```sh
 kubectl apply -f examples/tasktemplates.yaml
@@ -171,7 +193,8 @@ Or inspect by hand:
 ```sh
 # Cross-machine pod placement:
 kubectl get pods -l ts.io/workflow=linear-pipeline-1 -o wide
-# Tasks should be distributed across ts-pc1, ts-node-*-1, ts-node-mem-1.
+# Tasks should be distributed across ts-master (pc1) and the
+# ts-node-* workers (pc2).
 
 # Real LAN bandwidth (from ts-bw-probe):
 kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}={.metadata.annotations.ts\.io/bw-to-ts-node-mem-1}{"\n"}{end}'

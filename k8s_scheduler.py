@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 import sys
 import time
 import json
 import threading
+from pathlib import Path
 from kubernetes import client, config, watch
 from kubernetes.client.rest import ApiException
 
@@ -42,6 +44,12 @@ _DEFAULT_COMPAT = {
 
 PROFILE_CONFIGMAP = "ts-scheduler-profiles"
 SAVE_INTERVAL = 30  # seconds between ConfigMap saves
+# Local file path for profile persistence (survives cluster deletion).
+# Set TS_PROFILE_PATH env var to override.
+PROFILE_FILE = Path(os.environ.get(
+    "TS_PROFILE_PATH",
+    os.path.join(os.path.dirname(__file__), "profiles_learned.json"),
+))
 
 
 class K8sScheduler:
@@ -223,7 +231,9 @@ class K8sScheduler:
     # Profile persistence — ConfigMap
     # ------------------------------------------------------------------
     def _load_profiles(self):
-        """Load saved profiles from ConfigMap on startup."""
+        """Load saved profiles from ConfigMap first, then fall back to local file."""
+        loaded = False
+        # Try ConfigMap (in-cluster persistence).
         try:
             cm = self.v1.read_namespaced_config_map(
                 name=PROFILE_CONFIGMAP, namespace=NAMESPACE
@@ -231,6 +241,7 @@ class K8sScheduler:
             raw = (cm.data or {}).get("profiles", "")
             if raw:
                 self.store.load_json(raw)
+                loaded = True
                 count = sum(
                     sum(nm.count for nm in p.metrics_by_node.values())
                     for p in self.store.profiles.values()
@@ -239,15 +250,35 @@ class K8sScheduler:
                       f"({count} total observations) from ConfigMap")
         except ApiException as e:
             if e.status == 404:
-                print("[PERSIST] No saved profiles found — starting fresh")
+                pass  # will try local file
             else:
-                print(f"[PERSIST] Failed to load profiles: {e.reason}")
+                print(f"[PERSIST] ConfigMap load failed: {e.reason}")
+
+        # Fall back to local file (survives cluster deletion).
+        if not loaded and PROFILE_FILE.exists():
+            try:
+                raw = PROFILE_FILE.read_text()
+                self.store.load_json(raw)
+                count = sum(
+                    sum(nm.count for nm in p.metrics_by_node.values())
+                    for p in self.store.profiles.values()
+                )
+                print(f"[PERSIST] Loaded {len(self.store.profiles)} task profile(s) "
+                      f"({count} total observations) from {PROFILE_FILE}")
+            except Exception as e:
+                print(f"[PERSIST] Local file load failed: {e}")
+
+        if not self.store.profiles:
+            print("[PERSIST] No saved profiles found — starting fresh")
 
     def _save_profiles(self):
-        """Save current profiles to ConfigMap."""
+        """Save current profiles to ConfigMap AND local file."""
+        json_data = self.store.to_json()
+
+        # 1. ConfigMap (available to in-cluster restarts).
         body = client.V1ConfigMap(
             metadata=client.V1ObjectMeta(name=PROFILE_CONFIGMAP),
-            data={"profiles": self.store.to_json()},
+            data={"profiles": json_data},
         )
         try:
             self.v1.replace_namespaced_config_map(
@@ -259,14 +290,20 @@ class K8sScheduler:
                     namespace=NAMESPACE, body=body
                 )
             else:
-                print(f"[PERSIST] Save failed: {e.reason}")
-                return
+                print(f"[PERSIST] ConfigMap save failed: {e.reason}")
+
+        # 2. Local file (survives cluster deletion / kind recreate).
+        try:
+            PROFILE_FILE.write_text(json_data)
+        except OSError as e:
+            print(f"[PERSIST] Local file save failed: {e}")
+
         count = sum(
             sum(nm.count for nm in p.metrics_by_node.values())
             for p in self.store.profiles.values()
         )
         print(f"[PERSIST] Saved {len(self.store.profiles)} profile(s) "
-              f"({count} observations) to ConfigMap")
+              f"({count} observations) to ConfigMap + {PROFILE_FILE.name}")
 
     def _persist_loop(self):
         """Background thread: saves profiles every SAVE_INTERVAL seconds."""

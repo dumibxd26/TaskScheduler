@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────────────────
+# ts-fileserver — one Pod per node, exposes /var/lib/ts-data via HTTP 8080.
+#
+# Every task writes its outputs into a per-pod subdir under /var/lib/ts-data
+# on the node where it ran (mounted as /data/outputs in the worker pod).
+# Peers fetch those outputs through this fileserver. The probe file
+# /_probe.bin is also served from here for the ts-bw-probe DaemonSet.
+#
+# Uses `hostNetwork: true` so the fileserver is reachable from every other
+# node at http://<node-ip>:8080 with no Service/Endpoints needed.
+# ─────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ts-fileserver
+  namespace: ts-system
+  labels:
+    app.kubernetes.io/name: ts-fileserver
+    app.kubernetes.io/component: data-plane
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ts-fileserver
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ts-fileserver
+        app.kubernetes.io/component: data-plane
+    spec:
+      hostNetwork: true
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: nginx
+          image: ts-fileserver:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              hostPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          volumeMounts:
+            - name: data
+              mountPath: /srv/data
+              readOnly: false
+      volumes:
+        - name: data
+          hostPath:
+            path: /var/lib/ts-data
+            type: DirectoryOrCreate

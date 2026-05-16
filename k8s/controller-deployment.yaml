@@ -1,0 +1,44 @@
+# ─────────────────────────────────────────────────────────────────────────
+# ts-controller — Workflow CRD lifecycle controller. Singleton.
+# ─────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ts-controller
+  namespace: ts-system
+  labels:
+    app.kubernetes.io/name: ts-controller
+    app.kubernetes.io/component: control-plane
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ts-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ts-controller
+        app.kubernetes.io/component: control-plane
+    spec:
+      serviceAccountName: ts-controller
+      containers:
+        - name: controller
+          image: ts-control-plane:v1
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "-m", "cmd.controller.main"]
+          env:
+            - name: TS_NAMESPACE
+              value: default
+            - name: TS_FILESERVER_PORT
+              value: "8080"
+            - name: TS_RECONCILE_INTERVAL_S
+              value: "2"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ts-system
+  labels:
+    app.kubernetes.io/managed-by: taskscheduler
+---
+# ─────────────────────────────────────────────────────────────────────────
+# ts-scheduler — needs read access to pods + nodes, write to pod binding,
+# and r/w on the profile ConfigMap.
+# ─────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ts-scheduler
+  namespace: ts-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ts-scheduler
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/binding"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ts-scheduler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ts-scheduler
+subjects:
+  - kind: ServiceAccount
+    name: ts-scheduler
+    namespace: ts-system
+---
+# Namespaced permission for the profile ConfigMap in the default workload
+# namespace. (Profiles are stored in the same namespace as the workloads.)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ts-scheduler-profiles
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ts-scheduler-profiles
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ts-scheduler-profiles
+subjects:
+  - kind: ServiceAccount
+    name: ts-scheduler
+    namespace: ts-system
+---
+# ─────────────────────────────────────────────────────────────────────────
+# ts-controller — needs full access to Workflow/TaskTemplate CRDs + Pods.
+# ─────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ts-controller
+  namespace: ts-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ts-controller
+rules:
+  - apiGroups: ["ts.io"]
+    resources: ["workflows", "tasktemplates"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["ts.io"]
+    resources: ["workflows/status"]
+    verbs: ["update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ts-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ts-controller
+subjects:
+  - kind: ServiceAccount
+    name: ts-controller
+    namespace: ts-system

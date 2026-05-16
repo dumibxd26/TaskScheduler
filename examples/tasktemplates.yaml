@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Reusable TaskTemplates for the demo pipeline.
+# Admins install these once; users reference them by name from Workflows.
+# ─────────────────────────────────────────────────────────────────────────
+apiVersion: ts.io/v1
+kind: TaskTemplate
+metadata:
+  name: task-io
+spec:
+  image: ts-task-io:v1
+  imagePullPolicy: Never
+  taskClass: IO_BOUND
+  cpuRequest: "0.5"
+  memoryRequest: "512Mi"
+  compatibleNodeTypes: [IO_OPT, GENERAL]
+  expectedOutputBytes: 104857600   # ~100 MB
+---
+apiVersion: ts.io/v1
+kind: TaskTemplate
+metadata:
+  name: task-mem
+spec:
+  image: ts-task-mem:v1
+  imagePullPolicy: Never
+  taskClass: MEMORY_BOUND
+  cpuRequest: "0.5"
+  memoryRequest: "768Mi"
+  compatibleNodeTypes: [MEM_OPT, GENERAL]
+  expectedOutputBytes: 1024        # small metadata only
+---
+apiVersion: ts.io/v1
+kind: TaskTemplate
+metadata:
+  name: task-cpu
+spec:
+  image: ts-task-cpu:v1
+  imagePullPolicy: Never
+  taskClass: CPU_BOUND
+  cpuRequest: "1.0"
+  memoryRequest: "256Mi"
+  compatibleNodeTypes: [CPU_OPT, GENERAL]
+  expectedOutputBytes: 256

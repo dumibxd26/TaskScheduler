@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────────────────
+# ts-scheduler — adaptive placement controller. One replica (singleton).
+# ─────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ts-scheduler
+  namespace: ts-system
+  labels:
+    app.kubernetes.io/name: ts-scheduler
+    app.kubernetes.io/component: control-plane
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ts-scheduler
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ts-scheduler
+        app.kubernetes.io/component: control-plane
+    spec:
+      serviceAccountName: ts-scheduler
+      containers:
+        - name: scheduler
+          image: ts-control-plane:v1
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "-m", "cmd.scheduler.main"]
+          env:
+            - name: TS_POLICY
+              value: adaptive
+            - name: TS_NAMESPACE
+              value: default
+            - name: TS_PROFILE_PATH
+              value: /data/profiles_learned.json
+            - name: TS_PROFILE_CONFIGMAP
+              value: ts-scheduler-profiles
+            - name: TS_TICK_INTERVAL_S
+              value: "1.0"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: profile-storage
+              mountPath: /data
+      volumes:
+        - name: profile-storage
+          persistentVolumeClaim:
+            claimName: ts-scheduler-profiles
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ts-scheduler-profiles
+  namespace: ts-system
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 100Mi

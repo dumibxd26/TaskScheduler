@@ -1,0 +1,24 @@
+# Linear 3-stage pipeline: IO → MEM → CPU.
+# Same shape as workflows/3taskworkflow.json but as a Workflow CRD.
+apiVersion: ts.io/v1
+kind: Workflow
+metadata:
+  name: linear-pipeline-1
+spec:
+  priority: BATCH
+  workflowClass: PIPELINE
+  tasks:
+    - name: ingest
+      template: task-io
+    - name: stage
+      template: task-mem
+      dependsOn:
+        - parent: ingest
+          dependencyType: DATA
+          dataFields: [generated_file_path]
+    - name: crunch
+      template: task-cpu
+      dependsOn:
+        - parent: stage
+          dependencyType: DATA
+          dataFields: [processed_array_size]

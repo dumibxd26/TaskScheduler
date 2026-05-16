@@ -21,6 +21,9 @@ name: ts-cluster
 nodes:
   # The Control Plane (Kubernetes Brain)
   - role: control-plane
+    extraMounts:
+      - hostPath: /tmp/ts-profiles
+        containerPath: /profiles
 
   # ── CPU-Optimised node (2 CPUs, 1 GB RAM) ──
   - role: worker
@@ -37,8 +40,10 @@ nodes:
         nodeRegistration:
           name: ts-node-cpu-1
     extraMounts:
-      - hostPath: /tmp/ts-shared-data
-        containerPath: /ts-data
+      - hostPath: /tmp/ts-data-cpu-1
+        containerPath: /var/lib/ts-data
+      - hostPath: /tmp/ts-profiles
+        containerPath: /profiles
 
   # ── Memory-Optimised node (1 CPU, 1.5 GB RAM) ──
   - role: worker
@@ -55,8 +60,10 @@ nodes:
         nodeRegistration:
           name: ts-node-mem-1
     extraMounts:
-      - hostPath: /tmp/ts-shared-data
-        containerPath: /ts-data
+      - hostPath: /tmp/ts-data-mem-1
+        containerPath: /var/lib/ts-data
+      - hostPath: /tmp/ts-profiles
+        containerPath: /profiles
 
   # ── IO-Optimised node (1 CPU, 768 MB RAM) ──
   - role: worker
@@ -73,5 +80,7 @@ nodes:
         nodeRegistration:
           name: ts-node-io-1
     extraMounts:
-      - hostPath: /tmp/ts-shared-data
-        containerPath: /ts-data
+      - hostPath: /tmp/ts-data-io-1
+        containerPath: /var/lib/ts-data
+      - hostPath: /tmp/ts-profiles
+        containerPath: /profiles

@@ -1,0 +1,76 @@
+# ─────────────────────────────────────────────────────────────────────────
+# TaskTemplate CRD — a reusable task definition.
+#
+# Admins create one TaskTemplate per kind of work the cluster knows how to
+# run (e.g., "cpu-cruncher", "data-loader"). End users reference these by
+# name from their Workflow specs.
+# ─────────────────────────────────────────────────────────────────────────
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: tasktemplates.ts.io
+spec:
+  group: ts.io
+  scope: Namespaced
+  names:
+    kind: TaskTemplate
+    plural: tasktemplates
+    singular: tasktemplate
+    shortNames: [tt]
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [image, taskClass, cpuRequest, memoryRequest, compatibleNodeTypes]
+              properties:
+                image:
+                  type: string
+                  description: "Container image for this task type."
+                imagePullPolicy:
+                  type: string
+                  enum: [Always, IfNotPresent, Never]
+                  default: IfNotPresent
+                taskClass:
+                  type: string
+                  enum: [CPU_BOUND, MEMORY_BOUND, IO_BOUND]
+                cpuRequest:
+                  type: string
+                  description: "Kubernetes CPU request, e.g. '0.5' or '500m'."
+                memoryRequest:
+                  type: string
+                  description: "Kubernetes memory request, e.g. '256Mi' or '1Gi'."
+                compatibleNodeTypes:
+                  type: array
+                  items:
+                    type: string
+                    enum: [CPU_OPT, MEM_OPT, IO_OPT, GENERAL]
+                command:
+                  type: array
+                  items: { type: string }
+                args:
+                  type: array
+                  items: { type: string }
+                expectedOutputBytes:
+                  type: integer
+                  default: 0
+                  description: "Hint for ECT transfer-cost estimation."
+                checkpointable:
+                  type: boolean
+                  default: false
+                gangGroupId:
+                  type: string
+                  description: "If set, tasks in the same workflow that share this group are scheduled atomically."
+      additionalPrinterColumns:
+        - name: Class
+          type: string
+          jsonPath: .spec.taskClass
+        - name: Image
+          type: string
+          jsonPath: .spec.image

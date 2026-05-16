@@ -1,0 +1,19 @@
+apiVersion: v2
+name: ts-scheduler
+description: |
+  TaskScheduler — adaptive workflow scheduler for heterogeneous Kubernetes
+  clusters. Installs the controller, scheduler, data-plane fileserver, and
+  telemetry DaemonSets (bandwidth + thermal).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+icon: ""
+keywords:
+  - scheduler
+  - workflows
+  - dag
+  - heterogeneous
+sources:
+  - https://github.com/your-org/TaskScheduler
+maintainers:
+  - name: TaskScheduler contributors

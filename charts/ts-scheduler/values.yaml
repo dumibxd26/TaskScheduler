@@ -1,0 +1,70 @@
+# ─────────────────────────────────────────────────────────────────────────
+# ts-scheduler Helm chart — default values.
+# Override with --set or a -f values.yaml file.
+# ─────────────────────────────────────────────────────────────────────────
+
+namespace: ts-system
+
+# Namespace where user Workflow/TaskTemplate CRDs live (and where the
+# scheduler's profile ConfigMap is written).
+workloadNamespace: default
+
+scheduler:
+  image:
+    repository: ts-control-plane
+    tag: v1
+    pullPolicy: IfNotPresent
+  policy: adaptive          # adaptive | legacy
+  tickIntervalS: 1.0
+  profilePath: /data/profiles_learned.json
+  profileConfigMap: ts-scheduler-profiles
+  resources:
+    requests:  { cpu: "100m", memory: "128Mi" }
+    limits:    { cpu: "500m", memory: "512Mi" }
+  persistence:
+    enabled: true
+    size: 100Mi
+
+controller:
+  image:
+    repository: ts-control-plane
+    tag: v1
+    pullPolicy: IfNotPresent
+  reconcileIntervalS: 2
+  resources:
+    requests: { cpu: "100m", memory: "128Mi" }
+    limits:   { cpu: "500m", memory: "512Mi" }
+
+fileserver:
+  image:
+    repository: ts-fileserver
+    tag: v1
+    pullPolicy: IfNotPresent
+  port: 8080
+  hostPath: /var/lib/ts-data
+  resources:
+    requests: { cpu: "50m",  memory: "64Mi" }
+    limits:   { cpu: "200m", memory: "256Mi" }
+
+bwProbe:
+  enabled: true
+  image:
+    repository: ts-bw-probe
+    tag: v1
+    pullPolicy: IfNotPresent
+  intervalSeconds: 600
+  timeoutSeconds: 60
+  resources:
+    requests: { cpu: "20m", memory: "32Mi" }
+    limits:   { cpu: "200m", memory: "128Mi" }
+
+thermal:
+  enabled: true
+  image:
+    repository: ts-thermal
+    tag: v1
+    pullPolicy: IfNotPresent
+  intervalSeconds: 30
+  resources:
+    requests: { cpu: "10m", memory: "32Mi" }
+    limits:   { cpu: "100m", memory: "64Mi" }

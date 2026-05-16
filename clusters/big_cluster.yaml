@@ -39,8 +39,8 @@ nodes:
         nodeRegistration:
           name: ts-node-cpu-1
     extraMounts:
-      - hostPath: /tmp/ts-shared-data
-        containerPath: /ts-data
+      - hostPath: /tmp/ts-data-cpu-1
+        containerPath: /var/lib/ts-data
 
   - role: worker
     labels:
@@ -56,8 +56,8 @@ nodes:
         nodeRegistration:
           name: ts-node-cpu-2
     extraMounts:
-      - hostPath: /tmp/ts-shared-data
-        containerPath: /ts-data
+      - hostPath: /tmp/ts-data-cpu-2
+        containerPath: /var/lib/ts-data
 
   # ── Memory-Optimised nodes (2 CPUs, 8 GB RAM each) ──
   - role: worker
@@ -74,8 +74,8 @@ nodes:
         nodeRegistration:
           name: ts-node-mem-1
     extraMounts:
-      - hostPath: /tmp/ts-shared-data
-        containerPath: /ts-data
+      - hostPath: /tmp/ts-data-mem-1
+        containerPath: /var/lib/ts-data
 
   - role: worker
     labels:
@@ -91,8 +91,8 @@ nodes:
         nodeRegistration:
           name: ts-node-mem-2
     extraMounts:
-      - hostPath: /tmp/ts-shared-data
-        containerPath: /ts-data
+      - hostPath: /tmp/ts-data-mem-2
+        containerPath: /var/lib/ts-data
 
   # ── IO-Optimised nodes (2 CPUs, 4 GB RAM each) ──
   - role: worker
@@ -109,8 +109,8 @@ nodes:
         nodeRegistration:
           name: ts-node-io-1
     extraMounts:
-      - hostPath: /tmp/ts-shared-data
-        containerPath: /ts-data
+      - hostPath: /tmp/ts-data-io-1
+        containerPath: /var/lib/ts-data
 
   - role: worker
     labels:
@@ -126,5 +126,5 @@ nodes:
         nodeRegistration:
           name: ts-node-io-2
     extraMounts:
-      - hostPath: /tmp/ts-shared-data
-        containerPath: /ts-data
+      - hostPath: /tmp/ts-data-io-2
+        containerPath: /var/lib/ts-data

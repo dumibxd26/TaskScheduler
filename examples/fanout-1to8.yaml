@@ -1,0 +1,36 @@
+# Fan-out workflow: one IO task → 8 parallel CPU tasks.
+# Stresses the scheduler's parallel-placement + thermal/UCB balancing.
+apiVersion: ts.io/v1
+kind: Workflow
+metadata:
+  name: fanout-1to8
+spec:
+  priority: BATCH
+  workflowClass: BATCH
+  tasks:
+    - name: source
+      template: task-io
+    - name: leaf-1
+      template: task-cpu
+      dependsOn: [{ parent: source, dependencyType: DATA, dataFields: [generated_file_path] }]
+    - name: leaf-2
+      template: task-cpu
+      dependsOn: [{ parent: source, dependencyType: DATA, dataFields: [generated_file_path] }]
+    - name: leaf-3
+      template: task-cpu
+      dependsOn: [{ parent: source, dependencyType: DATA, dataFields: [generated_file_path] }]
+    - name: leaf-4
+      template: task-cpu
+      dependsOn: [{ parent: source, dependencyType: DATA, dataFields: [generated_file_path] }]
+    - name: leaf-5
+      template: task-cpu
+      dependsOn: [{ parent: source, dependencyType: DATA, dataFields: [generated_file_path] }]
+    - name: leaf-6
+      template: task-cpu
+      dependsOn: [{ parent: source, dependencyType: DATA, dataFields: [generated_file_path] }]
+    - name: leaf-7
+      template: task-cpu
+      dependsOn: [{ parent: source, dependencyType: DATA, dataFields: [generated_file_path] }]
+    - name: leaf-8
+      template: task-cpu
+      dependsOn: [{ parent: source, dependencyType: DATA, dataFields: [generated_file_path] }]

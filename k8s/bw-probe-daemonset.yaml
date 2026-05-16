@@ -1,0 +1,81 @@
+# ─────────────────────────────────────────────────────────────────────────
+# ts-bw-probe — one Pod per node. Every 10 minutes, curls the 100 MB probe
+# file from every peer node's ts-fileserver and writes the measured
+# bandwidth as a Node annotation (ts.io/bw-to-<peer>=<MB/s>).
+#
+# Needs a ServiceAccount with patch permission on Nodes.
+# ─────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ts-bw-probe
+  namespace: ts-system
+  labels:
+    app.kubernetes.io/name: ts-bw-probe
+    app.kubernetes.io/component: telemetry
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ts-bw-probe
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ts-bw-probe
+        app.kubernetes.io/component: telemetry
+    spec:
+      serviceAccountName: ts-bw-probe
+      hostNetwork: true
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: probe
+          image: ts-bw-probe:v1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TS_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: TS_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: TS_PROBE_INTERVAL_S
+              value: "600"
+            - name: TS_PROBE_TIMEOUT_S
+              value: "60"
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "32Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ts-bw-probe
+  namespace: ts-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ts-bw-probe
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["list", "get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ts-bw-probe
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ts-bw-probe
+subjects:
+  - kind: ServiceAccount
+    name: ts-bw-probe
+    namespace: ts-system

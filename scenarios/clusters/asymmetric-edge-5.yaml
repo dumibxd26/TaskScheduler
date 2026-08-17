@@ -1,0 +1,46 @@
+schema_version: 1
+cluster:
+  id: asymmetric-edge-5
+  family: asymmetric-network
+  description: Three edge nodes share a constrained uplink to two core nodes and the registry.
+  calibration:
+    status: synthetic
+    source: Congestion and data-locality stress scenario.
+    uncertainty_fraction: 0
+  registry_endpoint: registry
+  network_vertices: [edge-switch, core-switch]
+  nodes:
+    - &edge
+      id: edge-1
+      type: GENERAL
+      cooling_class: PASSIVE
+      background_cpu_fraction: 0.05
+      background_memory_mib: 256
+      cpu: {architecture: arm64, microarchitecture: synthetic-edge, physical_cores: 4, threads_per_core: 1, base_frequency_ghz: 1.8, max_frequency_ghz: 2.3, calibrated_gflops_per_core: 6, l3_cache_mib: 4, idle_power_w: 3, max_power_w: 18, smt_efficiency: 0}
+      memory: {capacity_mib: 4096, calibrated_bandwidth_mib_s: 10000, latency_ns: 105, channels: 1}
+      storage: {capacity_mib: 128000, sequential_read_mib_s: 500, sequential_write_mib_s: 350, random_read_iops: 45000, random_write_iops: 28000}
+      thermal: {ambient_c: 27, initial_c: 42, throttle_c: 75, shutdown_c: 85, thermal_resistance_c_per_w: 2.1, thermal_capacitance_j_per_c: 42, minimum_throttle_factor: 0.38}
+    - <<: *edge
+      id: edge-2
+    - <<: *edge
+      id: edge-3
+    - &core
+      id: core-1
+      type: CPU_OPT
+      cooling_class: HIGH
+      background_cpu_fraction: 0.02
+      background_memory_mib: 1024
+      cpu: {architecture: amd64, microarchitecture: synthetic-core, physical_cores: 12, threads_per_core: 2, base_frequency_ghz: 3.0, max_frequency_ghz: 4.4, calibrated_gflops_per_core: 18, l3_cache_mib: 48, idle_power_w: 24, max_power_w: 160, smt_efficiency: 0.34}
+      memory: {capacity_mib: 65536, calibrated_bandwidth_mib_s: 64000, latency_ns: 65, channels: 4}
+      storage: {capacity_mib: 2048000, sequential_read_mib_s: 5000, sequential_write_mib_s: 4000, random_read_iops: 600000, random_write_iops: 450000}
+      thermal: {ambient_c: 21, initial_c: 31, throttle_c: 90, shutdown_c: 100, thermal_resistance_c_per_w: 0.32, thermal_capacitance_j_per_c: 210, minimum_throttle_factor: 0.7}
+    - <<: *core
+      id: core-2
+  links:
+    - {id: edge-1-link, endpoints: [edge-1, edge-switch], bandwidth_mib_s: 60, latency_ms: 2.5, jitter_ms: 1.2, packet_loss_rate: 0.003, medium: wifi}
+    - {id: edge-2-link, endpoints: [edge-2, edge-switch], bandwidth_mib_s: 40, latency_ms: 4.0, jitter_ms: 2.0, packet_loss_rate: 0.006, medium: wifi}
+    - {id: edge-3-link, endpoints: [edge-3, edge-switch], bandwidth_mib_s: 25, latency_ms: 8.0, jitter_ms: 4.0, packet_loss_rate: 0.01, medium: wifi}
+    - {id: shared-uplink, endpoints: [edge-switch, core-switch], bandwidth_mib_s: 50, latency_ms: 12, jitter_ms: 3.0, packet_loss_rate: 0.004, medium: wan}
+    - {id: core-1-link, endpoints: [core-1, core-switch], bandwidth_mib_s: 476, latency_ms: 0.15}
+    - {id: core-2-link, endpoints: [core-2, core-switch], bandwidth_mib_s: 476, latency_ms: 0.15}
+    - {id: registry-link, endpoints: [registry, core-switch], bandwidth_mib_s: 476, latency_ms: 0.15}

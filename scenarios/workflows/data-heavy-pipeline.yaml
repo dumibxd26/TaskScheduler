@@ -1,0 +1,17 @@
+schema_version: 1
+workflow:
+  id: data-heavy-pipeline
+  family: data-heavy
+  tags: [resource, network, locality, pipeline]
+  description: Modest compute stages exchange multi-gigabyte intermediates.
+  tasks:
+    - &stage {id: data-1, class: IO_BOUND, image: bench/mixed:v1, image_size_mib: 110, startup_s: 0.2, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 1536, working_set_mib: 1024, compute_gflop: 24, memory_read_mib: 3000, disk_read_mib: 2000}
+    - {<<: *stage, id: data-2}
+    - {<<: *stage, id: data-3}
+    - {<<: *stage, id: data-4}
+    - {<<: *stage, id: data-5}
+  dependencies:
+    - {parent: data-1, child: data-2, data_mib: 4096}
+    - {parent: data-2, child: data-3, data_mib: 4096}
+    - {parent: data-3, child: data-4, data_mib: 4096}
+    - {parent: data-4, child: data-5, data_mib: 4096}

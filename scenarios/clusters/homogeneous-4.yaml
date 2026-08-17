@@ -1,0 +1,61 @@
+schema_version: 1
+cluster:
+  id: homogeneous-4
+  family: homogeneous
+  description: Four equivalent compute nodes behind a non-blocking 1 Gb/s switch.
+  calibration: &synthetic
+    status: synthetic
+    source: Controlled scheduler baseline, not a claim about specific hardware.
+    uncertainty_fraction: 0
+  registry_endpoint: registry
+  network_vertices: [switch]
+  nodes:
+    - &worker
+      id: worker-1
+      type: GENERAL
+      cooling_class: STANDARD
+      background_cpu_fraction: 0.03
+      background_memory_mib: 512
+      cpu: &cpu
+        architecture: amd64
+        microarchitecture: synthetic-balanced
+        physical_cores: 4
+        threads_per_core: 2
+        base_frequency_ghz: 2.8
+        max_frequency_ghz: 3.8
+        calibrated_gflops_per_core: 12
+        l3_cache_mib: 12
+        idle_power_w: 10
+        max_power_w: 65
+        smt_efficiency: 0.3
+      memory: &memory
+        capacity_mib: 16384
+        calibrated_bandwidth_mib_s: 24000
+        latency_ns: 75
+        channels: 2
+      storage: &storage
+        capacity_mib: 512000
+        sequential_read_mib_s: 2200
+        sequential_write_mib_s: 1800
+        random_read_iops: 220000
+        random_write_iops: 160000
+      thermal: &thermal
+        ambient_c: 22
+        initial_c: 35
+        throttle_c: 88
+        shutdown_c: 98
+        thermal_resistance_c_per_w: 0.75
+        thermal_capacitance_j_per_c: 90
+        minimum_throttle_factor: 0.55
+    - <<: *worker
+      id: worker-2
+    - <<: *worker
+      id: worker-3
+    - <<: *worker
+      id: worker-4
+  links:
+    - {id: worker-1-link, endpoints: [worker-1, switch], bandwidth_mib_s: 119, latency_ms: 0.25}
+    - {id: worker-2-link, endpoints: [worker-2, switch], bandwidth_mib_s: 119, latency_ms: 0.25}
+    - {id: worker-3-link, endpoints: [worker-3, switch], bandwidth_mib_s: 119, latency_ms: 0.25}
+    - {id: worker-4-link, endpoints: [worker-4, switch], bandwidth_mib_s: 119, latency_ms: 0.25}
+    - {id: registry-link, endpoints: [registry, switch], bandwidth_mib_s: 476, latency_ms: 0.2}

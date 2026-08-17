@@ -1,9 +1,43 @@
-# Implementation Architecture — Adaptive Workflow Scheduler
+# Historical Implementation Architecture Plan
 
-> **Status:** Draft v1 · May 2026
+> **Document status (2026-08-16): historical design plan.** This file records
+> the architecture proposed before the current simulator, data plane,
+> telemetry, control-plane split, and experiment lab were completed. Its
+> baseline tables, phase checklists, file paths, and future-tense statements
+> are useful design history but are not the current implementation status.
+>
+> Use [README.md](README.md) for setup and entry points,
+> [ARCHITECTURE.md](ARCHITECTURE.md) for the current component model,
+> [ENGINEERING_JOURNAL.md](ENGINEERING_JOURNAL.md) for decisions, incidents,
+> and evidence, and [thesis/thesis.tex](thesis/thesis.tex) for evaluated
+> algorithms and results. Owning code and retained raw artifacts take
+> precedence over every document.
+
+## Current status relative to this plan
+
+| Planned area | Current state |
+|---|---|
+| Deterministic simulator | Implemented independently under `simulation/` with nine policies and explicit resource/event models |
+| Scenario and trace lab | Implemented under `scenarios/` and `run_experiment_lab.py`; 17,400 exploratory and 33,250 fresh-seed confirmatory records retained |
+| Producer-local data | Implemented with node-local storage, fileserver DaemonSet, producer metadata, local reads, and remote HTTP fetch |
+| Bandwidth telemetry | Implemented with `ts.io/bw-from-*` Node annotations and live ECT consumption |
+| Thermal telemetry | Implemented as a Node-annotation signal; retained Kind temperatures are synthetic and do not validate physical thermals |
+| Live policy interface | Exact Legacy v1, tuned exact Legacy, and Adaptive are integrated in `controlplane/scheduler/main.py`; `legacy` aliases v1 |
+| Live preemption | Implemented as bounded Pod deletion plus controller retry, not process migration or checkpoint restore |
+| Controller failure handling | Interrupted tasks retry; descendants blocked by failed parents terminate recursively |
+| Profile persistence | Implemented through local storage plus a ConfigMap |
+| Full live HEFT ranking | Not implemented: the controller knows the DAG, but the scheduler adapter receives no future edges |
+| Kind evaluation | Historical six-trial pilot plus an accepted 27-trial, 135-workflow, 540-task matrix for Legacy v1, tuned Legacy, and Adaptive across balanced, homogeneous, and skewed same-host profiles |
+| Physical multi-machine k3s | Scripts exist; retained physical validation is pending |
+
+The original draft follows unchanged so design intent and rejected assumptions
+remain auditable.
+
+> **Original status:** Draft v1, May 2026.
 > **Companion to:** [ProblemSpecification.md](ProblemSpecification.md) (problem definition).
-> **Audience:** Implementer (you), thesis defense reviewers, future maintainers.
-> **Goal of this document:** Describe **how** the scheduler is built — every component, every file, every interface, every wire — including (a) what already exists in the repo today, (b) what must be added, (c) the exact code/logic shape of the additions, and (d) the rollout phases.
+> **Audience:** Implementer, thesis defense reviewers, future maintainers.
+> **Original goal:** Describe how the proposed scheduler should be built,
+> including the baseline, additions, interfaces, and rollout phases.
 
 This document deliberately complements `ProblemSpecification.md`:
 - *Problem spec* answers: **what** must the scheduler decide, **why**, under **which constraints**.
@@ -102,7 +136,7 @@ The codebase supports two parallel runtimes that share the **same** `models/` an
 | Mode | Driver | Cluster | Purpose |
 |---|---|---|---|
 | **Simulation** | [run_simulation.py](run_simulation.py), [test_simulation.py](test_simulation.py), [main.py](main.py) | In-process `ClusterScenario` with synthetic nodes; no real pods. Tasks are simulated by `time.sleep` + scripted observations. | Fast iteration, batch ablation studies, deterministic seeded experiments. |
-| **Real K8s** | [k8s_scheduler.py](k8s_scheduler.py), [submit_workflows.py](submit_workflows.py), [k8s_main.py](k8s_main.py) | A `kind` cluster (6 workers, see [kind-cluster.yaml](kind-cluster.yaml)) or a real heterogeneous cluster. Pods are real; metrics, image cache, and runtime are observed. | Validate that decisions translate to real wall-clock; defense demo. |
+| **Real K8s** | [k8s_scheduler.py](k8s_scheduler.py), [submit_workflows.py](submit_workflows.py), [k8s_main.py](k8s_main.py) | A `kind` cluster (6 workers in the original plan; see the [current small profile](clusters/small_cluster.yaml)) or a real heterogeneous cluster. Pods are real; metrics, image cache, and runtime are observed. | Validate that decisions translate to real wall-clock; defense demo. |
 
 Both modes share `Policy`, `ProfileStore`, `DataPlacement`, `QueueManager`, `ReadinessResolver`, and the new planners. **The only difference is the I/O layer**: in-process function calls vs. k8s-API binds.
 
@@ -162,7 +196,7 @@ Snapshot of the repo as of this writing, mapped against the entity model in [Pro
 
 | Artifact | File | Status | Gap |
 |---|---|---|---|
-| Kind cluster | [kind-cluster.yaml](kind-cluster.yaml) | ✓ | Currently mounts a **single shared host dir** to every kind-node — must change to per-node host dirs (Part VI.4). Add `cooling-class` label per node. |
+| Kind cluster | [current small profile](clusters/small_cluster.yaml) | ✓ | The original plan assumed a single shared host directory and proposed per-node storage plus cooling labels. |
 | Scheduler deployment | [scheduler-deployment.yaml](scheduler-deployment.yaml) | ✓ Partial | Needs RBAC for fileserver/thermal/bw-probe DaemonSets and for reading metrics. |
 | Scheduler image | [Dockerfile.scheduler](Dockerfile.scheduler) | ✓ | OK. |
 | Task images | [tasks/](tasks/) | ✓ | The three sample tasks must drop the shared-volume helpers and start writing to a per-pod local hostPath (Part VI.5). |
@@ -197,7 +231,7 @@ This is the question that triggered this document. **Are the three channels impl
 
 **What the current code does (the *wrong* model per the spec):**
 
-Look at [kind-cluster.yaml:18-22](kind-cluster.yaml):
+The original draft referred to a removed root config; see the [current small-cluster config](clusters/small_cluster.yaml):
 ```yaml
 extraMounts:
   - hostPath: /tmp/ts-shared-data
@@ -280,7 +314,7 @@ Each task is a Python program in its own image (`ts-task-cpu:v1`, `ts-task-mem:v
 
 ### 4.5 Cluster artifacts
 
-- **[kind-cluster.yaml](kind-cluster.yaml)** — kind cluster topology. **Modify** mounts (per-node host dirs); add cooling-class labels.
+- **[clusters/small_cluster.yaml](clusters/small_cluster.yaml)** — current small Kind topology; the original plan proposed per-node mounts and cooling labels.
 - **[scheduler-deployment.yaml](scheduler-deployment.yaml)** — RBAC + Deployment for the scheduler pod. **Extend** RBAC for new resources.
 - **[setup_cluster.sh](setup_cluster.sh)** — bootstrap script. **Extend** to apply the three new DaemonSets.
 
@@ -1260,7 +1294,7 @@ A quick lookup of every file touched, indexed by phase. **`+`** = new file, **`*
 - `*` [engine.py](engine.py) — accept a `Policy`; preserve current behaviour by defaulting to legacy.
 
 ### Phase 1
-- `!` [kind-cluster.yaml](kind-cluster.yaml) — per-node host paths.
+- `!` [clusters/small_cluster.yaml](clusters/small_cluster.yaml) — per-node host paths in the original plan.
 - `!` [services/data_manager.py](services/data_manager.py) — replace `SharedVolumeDataManager` with `ProducerLocalDataManager`; keep the simulation `FileStoreDataManager` as-is.
 - `+` `services/data_placement.py` — `DataPlacement` registry.
 - `*` [services/observer.py](services/observer.py) — record output sizes, transfer seconds; call `DataPlacement.record_output`.
@@ -1317,7 +1351,7 @@ Tracked here so each gets resolved before its phase ships. Distinct from the *pr
 | I2 | Should the fileserver speak HTTP or gRPC? | 1 | HTTP. Simpler, debuggable with `curl`, no proto generation. |
 | I3 | Do we need authentication between fileserver and consumer pods? | 1 | No — single-tenant cluster (per [ProblemSpec §2.2](ProblemSpecification.md)). Can add a shared-secret bearer token later if scope expands. |
 | I4 | When a child has *N* parents on *N* distinct nodes, do we issue *N* parallel `curl`s or *N* sequential ones inside the initContainer? | 1 | Parallel via `curl -Z` (libcurl's parallel mode) or a small `xargs -P` wrapper. Saves wall-clock. |
-| I5 | Where does the per-node `cooling_class` label get baked in for the kind cluster (so dev experiments are reproducible)? | 5 | In [kind-cluster.yaml](kind-cluster.yaml) directly, alongside `node-type`. Real cluster: cluster-bootstrap script labels nodes from a YAML manifest. |
+| I5 | Where does the per-node `cooling_class` label get baked in for the kind cluster (so dev experiments are reproducible)? | 5 | In [clusters/small_cluster.yaml](clusters/small_cluster.yaml) directly, alongside `node-type`. Real cluster: cluster-bootstrap script labels nodes from a YAML manifest. |
 | I6 | What happens if the fileserver pod on a node is restarting at the moment a child needs to fetch from it? | 1 | InitContainer retries with exponential backoff (5 attempts, max 30 s). If still failing, the pod fails and the scheduler re-enqueues the child, possibly choosing a different node. |
 | I7 | Do output files need a checksum so the consumer can detect a partial fetch? | 1 | Yes. The producer writes `<field>.bin.sha256` alongside; the initContainer verifies. Cheap, prevents subtle correctness bugs. |
 | I8 | How is the gang-readiness check implemented atomically — at admission, at every tick, or once per gang? | 4 | Once per tick, in `ReadinessResolver`. A gang is "ready" only when every member's predecessors are FINISHED. Otherwise the whole gang stays WAITING. |
@@ -1337,7 +1371,7 @@ This document is implementable as-is once the following are confirmed:
 - [ ] Channel A stays as today (KB-scale metadata via `__TS_OUTPUT__` logs).
 - [ ] Channel B is built per [Part VI](#part-vi--data-plane-producer-local-storage): per-node `hostPath`, `ts-fileserver` DaemonSet, initContainer fetch, checksum verification.
 - [ ] Channel C is the same-node branch of B (read-only sub-path mount; no initContainer).
-- [ ] The current shared-volume model in [services/data_manager.py](services/data_manager.py) and [kind-cluster.yaml](kind-cluster.yaml) is **replaced**, not preserved alongside.
+- [ ] The original shared-volume model in [services/data_manager.py](services/data_manager.py) and the Kind config (now [clusters/small_cluster.yaml](clusters/small_cluster.yaml)) is **replaced**, not preserved alongside.
 - [ ] `Policy` interface is acceptable as the seam for swapping schedulers (legacy / FCFS / HEFT / Adaptive).
 - [ ] The phased rollout (Part XVI) matches the time budget for the thesis.
 - [ ] All new files & modified files in [Part XVII](#part-xvii--file-by-file-change-map) are agreed.

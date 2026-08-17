@@ -18,6 +18,7 @@ PROFILE     ?= small
 NAMESPACE   ?= default
 WF          ?= linear-pipeline-1
 WF_FILE     ?= examples/linear-3task.yaml
+PYTHON      ?= $(if $(wildcard .venv/Scripts/python.exe),.venv/Scripts/python.exe,$(if $(wildcard .venv/bin/python),.venv/bin/python,python3))
 
 # Image names + tags (must match k8s manifests and examples/tasktemplates.yaml).
 CONTROL_PLANE_IMG := ts-control-plane:v1
@@ -94,7 +95,7 @@ images-multiarch:
 # registry prefix. Run from pc1 (kubeconfig already points at the cluster).
 install-remote:
 	@if [ -z "$(REGISTRY)" ]; then echo "✗ REGISTRY not set"; exit 2; fi
-	kubectl kustomize --load-restrictor=LoadRestrictionsNone manifests/ \
+	kubectl kustomize . \
 	  | sed -E 's|image: (ts-[a-z0-9-]+:v1)|image: $(REGISTRY)/\1|g' \
 	  | kubectl apply -f -
 	@echo "Waiting for Deployments + DaemonSets to be Ready..."
@@ -145,7 +146,7 @@ load:
 
 # ── Install / uninstall the platform ──
 install:
-	kubectl kustomize --load-restrictor=LoadRestrictionsNone manifests/ | kubectl apply -f -
+	kubectl apply -k .
 	@echo "Waiting for control-plane Deployments to become Ready..."
 	kubectl -n ts-system rollout status deploy/ts-controller --timeout=120s
 	kubectl -n ts-system rollout status deploy/ts-scheduler  --timeout=120s
@@ -154,14 +155,14 @@ install:
 	kubectl -n ts-system rollout status ds/ts-thermal        --timeout=120s
 
 uninstall:
-	kubectl kustomize --load-restrictor=LoadRestrictionsNone manifests/ | kubectl delete --ignore-not-found -f -
+	kubectl delete --ignore-not-found -k .
 
 # ── Examples + smoke ──
 examples:
 	kubectl apply -f examples/tasktemplates.yaml
 	kubectl apply -f $(WF_FILE)
 
-smoke: images load install examples
+smoke: cluster images load install examples
 	@echo ""
 	@echo "=== Smoke test: watching workflow '$(WF)' ==="
 	@$(MAKE) watch-workflow WF=$(WF)
@@ -192,6 +193,6 @@ logs-scheduler:
 logs-controller:
 	kubectl -n ts-system logs -l app.kubernetes.io/name=ts-controller --tail=200 -f
 
-# ── Simulation tests (unchanged path) ──
+# ── Full Python test suite ──
 test:
-	python3 test_simulation.py
+	$(PYTHON) -m pytest

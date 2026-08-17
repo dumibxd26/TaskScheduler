@@ -1,0 +1,19 @@
+schema_version: 1
+workflow:
+  id: wide-12
+  family: wide
+  tags: [topology, independent, saturation]
+  description: Twelve independent equal tasks expose packing and contention behavior.
+  tasks:
+    - &worker {id: w1, class: CPU_BOUND, image: bench/cpu:v1, image_size_mib: 96, startup_s: 0.15, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 512, working_set_mib: 192, compute_gflop: 96}
+    - {<<: *worker, id: w2}
+    - {<<: *worker, id: w3}
+    - {<<: *worker, id: w4}
+    - {<<: *worker, id: w5}
+    - {<<: *worker, id: w6}
+    - {<<: *worker, id: w7}
+    - {<<: *worker, id: w8}
+    - {<<: *worker, id: w9}
+    - {<<: *worker, id: w10}
+    - {<<: *worker, id: w11}
+    - {<<: *worker, id: w12}

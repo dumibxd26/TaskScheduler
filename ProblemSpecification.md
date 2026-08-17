@@ -1,5 +1,14 @@
 # Problem Specification — Adaptive Workflow Scheduler
 
+> **Document status (2026-08-17): historical problem definition.** This file
+> preserves the requirements and success criteria that preceded implementation.
+> It is not a report of completed experiments. Use [README.md](README.md) for
+> current entry points, [ARCHITECTURE.md](ARCHITECTURE.md) for the implemented
+> system, [ENGINEERING_JOURNAL.md](ENGINEERING_JOURNAL.md) for retained
+> evidence, and [thesis/thesis.tex](thesis/thesis.tex) for the final academic
+> evaluation. In particular, same-host Kind evidence does not satisfy this
+> draft's physical-cluster or universal-baseline aspirations.
+>
 > **Status:** Draft v1 · May 2026
 > **Audience:** Thesis defense, future contributors, and the algorithm-design document that follows this one.
 > **Goal of this document:** Define the problem completely — every entity, every constraint, every input, every output, every objective, every non-goal, every open question — *before* committing to an algorithm. Algorithm choice is deliberately deferred to a separate document.

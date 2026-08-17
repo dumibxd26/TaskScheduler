@@ -1,0 +1,21 @@
+schema_version: 1
+workflow:
+  id: linear-5
+  family: linear
+  tags: [topology, pipeline]
+  description: Five equal CPU stages in a strict chain.
+  tasks:
+    - &stage {id: stage-1, class: CPU_BOUND, image: bench/cpu:v1, image_size_mib: 96, startup_s: 0.2, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 512, working_set_mib: 128, compute_gflop: 48, parallel_fraction: 0}
+    - <<: *stage
+      id: stage-2
+    - <<: *stage
+      id: stage-3
+    - <<: *stage
+      id: stage-4
+    - <<: *stage
+      id: stage-5
+  dependencies:
+    - {parent: stage-1, child: stage-2, data_mib: 64}
+    - {parent: stage-2, child: stage-3, data_mib: 64}
+    - {parent: stage-3, child: stage-4, data_mib: 64}
+    - {parent: stage-4, child: stage-5, data_mib: 64}

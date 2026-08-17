@@ -1,0 +1,320 @@
+{
+  "method": {
+    "calibration_uncertainty": "sampled per case seed",
+    "cases": 750,
+    "clusters": [
+      "asymmetric-edge-5",
+      "balanced-heterogeneous-4",
+      "homogeneous-4",
+      "local-i5-8300h",
+      "unreliable-thermal-3"
+    ],
+    "normalization": "absolute weight scale fixed at 125",
+    "profiles": "12 seeded calibration observations per task/node",
+    "seed_range": [
+      300,
+      309
+    ],
+    "study": "leave-one-factor-out",
+    "workflows": [
+      "cache-sensitive",
+      "checkpoint-long",
+      "cpu-heavy-8",
+      "critical-deadline",
+      "data-heavy-pipeline",
+      "deep-10",
+      "diamond",
+      "fanin-8to1",
+      "fanout-1to8",
+      "gang-4",
+      "io-heavy-6",
+      "linear-5",
+      "memory-heavy-6",
+      "mixed-etl",
+      "wide-12"
+    ]
+  },
+  "ranking": [
+    {
+      "components_vs_v1": {
+        "deadline_lateness_ratio": 1.0,
+        "mean_energy_ratio": 0.9831960738335481,
+        "mean_makespan_ratio": 0.9702157654075092,
+        "mean_response_ratio": 0.9795846752343791,
+        "mean_transfer_ratio": 0.9062704141749948,
+        "p95_makespan_ratio": 1.0
+      },
+      "deadline_misses": 8,
+      "makespan_losses": 10,
+      "makespan_ties": 730,
+      "makespan_wins": 10,
+      "objective_delta_vs_tuned": -0.00011066358717704006,
+      "objective_vs_v1": 0.9771679238106405,
+      "task_retries": 90,
+      "variant": "without-node-availability",
+      "weights": {
+        "data_locality": 11.839528581900431,
+        "failure_penalty": -20.82432079427413,
+        "load_balance": 7.273950885512697,
+        "memory_pressure": -7.530355568052115,
+        "node_availability": 0.0,
+        "resource_fit": 19.208319913812897,
+        "type_affinity": 24.88487400742123,
+        "warm_image": 33.43865024902652
+      }
+    },
+    {
+      "components_vs_v1": {
+        "deadline_lateness_ratio": 1.0,
+        "mean_energy_ratio": 0.9822468292272855,
+        "mean_makespan_ratio": 0.9713758803456808,
+        "mean_response_ratio": 0.976930526123986,
+        "mean_transfer_ratio": 0.907903588018695,
+        "p95_makespan_ratio": 1.0
+      },
+      "deadline_misses": 8,
+      "makespan_losses": 0,
+      "makespan_ties": 750,
+      "makespan_wins": 0,
+      "objective_delta_vs_tuned": 0.0,
+      "objective_vs_v1": 0.9772785873978176,
+      "task_retries": 80,
+      "variant": "legacy-tuned",
+      "weights": {
+        "data_locality": 11.257918606183544,
+        "failure_penalty": -19.80133811150127,
+        "load_balance": 6.916622266503629,
+        "memory_pressure": -7.160431217705109,
+        "node_availability": 6.140552511166027,
+        "resource_fit": 18.264722337156538,
+        "type_affinity": 23.662419002810662,
+        "warm_image": 31.795995946973218
+      }
+    },
+    {
+      "components_vs_v1": {
+        "deadline_lateness_ratio": 1.0,
+        "mean_energy_ratio": 0.9822468292272855,
+        "mean_makespan_ratio": 0.9713758803456808,
+        "mean_response_ratio": 0.976930526123986,
+        "mean_transfer_ratio": 0.907903588018695,
+        "p95_makespan_ratio": 1.0
+      },
+      "deadline_misses": 8,
+      "makespan_losses": 0,
+      "makespan_ties": 750,
+      "makespan_wins": 0,
+      "objective_delta_vs_tuned": 0.0,
+      "objective_vs_v1": 0.9772785873978176,
+      "task_retries": 80,
+      "variant": "without-warm-image",
+      "weights": {
+        "data_locality": 15.09849110100805,
+        "failure_penalty": -26.556447752281713,
+        "load_balance": 9.276187134847419,
+        "memory_pressure": -9.603170070932935,
+        "node_availability": 8.235365762387831,
+        "resource_fit": 24.49562457473011,
+        "type_affinity": 31.734713603811947,
+        "warm_image": 0.0
+      }
+    },
+    {
+      "components_vs_v1": {
+        "deadline_lateness_ratio": 1.0,
+        "mean_energy_ratio": 0.9822468292272855,
+        "mean_makespan_ratio": 0.9713758803456808,
+        "mean_response_ratio": 0.976930526123986,
+        "mean_transfer_ratio": 0.907903588018695,
+        "p95_makespan_ratio": 1.0
+      },
+      "deadline_misses": 8,
+      "makespan_losses": 0,
+      "makespan_ties": 750,
+      "makespan_wins": 0,
+      "objective_delta_vs_tuned": 0.0,
+      "objective_vs_v1": 0.9772785873978176,
+      "task_retries": 80,
+      "variant": "without-failure-penalty",
+      "weights": {
+        "data_locality": 13.37697457848364,
+        "failure_penalty": 0.0,
+        "load_balance": 8.218524530562277,
+        "memory_pressure": -8.50822516318522,
+        "node_availability": 7.296376684993472,
+        "resource_fit": 21.702655253965503,
+        "type_affinity": 28.11634979241791,
+        "warm_image": 37.780893996391995
+      }
+    },
+    {
+      "components_vs_v1": {
+        "deadline_lateness_ratio": 1.0,
+        "mean_energy_ratio": 0.9822468292272855,
+        "mean_makespan_ratio": 0.9713758803456808,
+        "mean_response_ratio": 0.976930526123986,
+        "mean_transfer_ratio": 0.907903588018695,
+        "p95_makespan_ratio": 1.0
+      },
+      "deadline_misses": 8,
+      "makespan_losses": 0,
+      "makespan_ties": 750,
+      "makespan_wins": 0,
+      "objective_delta_vs_tuned": 0.0,
+      "objective_vs_v1": 0.9772785873978176,
+      "task_retries": 80,
+      "variant": "without-memory-pressure",
+      "weights": {
+        "data_locality": 11.941997414915672,
+        "failure_penalty": -21.004551268432227,
+        "load_balance": 7.3369055254286915,
+        "memory_pressure": 0.0,
+        "node_availability": 6.513678485312642,
+        "resource_fit": 19.37456421248884,
+        "type_affinity": 25.100247785324004,
+        "warm_image": 33.72805530809793
+      }
+    },
+    {
+      "components_vs_v1": {
+        "deadline_lateness_ratio": 1.0,
+        "mean_energy_ratio": 0.9857119047858823,
+        "mean_makespan_ratio": 0.9701077808940475,
+        "mean_response_ratio": 0.9806648811541786,
+        "mean_transfer_ratio": 0.9034591435742505,
+        "p95_makespan_ratio": 1.0
+      },
+      "deadline_misses": 8,
+      "makespan_losses": 0,
+      "makespan_ties": 740,
+      "makespan_wins": 10,
+      "objective_delta_vs_tuned": 0.00011379383493137496,
+      "objective_vs_v1": 0.977392381232749,
+      "task_retries": 90,
+      "variant": "without-resource-fit",
+      "weights": {
+        "data_locality": 13.184392794837217,
+        "failure_penalty": -23.189776783607044,
+        "load_balance": 8.100206438249884,
+        "memory_pressure": -8.385736392052538,
+        "node_availability": 7.191334305798677,
+        "resource_fit": 0.0,
+        "type_affinity": 27.711572407151746,
+        "warm_image": 37.236980878302894
+      }
+    },
+    {
+      "components_vs_v1": {
+        "deadline_lateness_ratio": 1.0,
+        "mean_energy_ratio": 1.0,
+        "mean_makespan_ratio": 1.0,
+        "mean_response_ratio": 1.0,
+        "mean_transfer_ratio": 1.0,
+        "p95_makespan_ratio": 1.0
+      },
+      "deadline_misses": 8,
+      "makespan_losses": 110,
+      "makespan_ties": 630,
+      "makespan_wins": 10,
+      "objective_delta_vs_tuned": 0.02272141260218241,
+      "objective_vs_v1": 1.0,
+      "task_retries": 170,
+      "variant": "legacy-v1",
+      "weights": {
+        "data_locality": 5,
+        "failure_penalty": -10,
+        "load_balance": 10,
+        "memory_pressure": -15,
+        "node_availability": 25,
+        "resource_fit": 20,
+        "type_affinity": 30,
+        "warm_image": 10
+      }
+    },
+    {
+      "components_vs_v1": {
+        "deadline_lateness_ratio": 1.0,
+        "mean_energy_ratio": 1.0082213347113893,
+        "mean_makespan_ratio": 0.9918097498393622,
+        "mean_response_ratio": 0.9936079088510585,
+        "mean_transfer_ratio": 0.8991886944016736,
+        "p95_makespan_ratio": 1.2988483068012906
+      },
+      "deadline_misses": 8,
+      "makespan_losses": 60,
+      "makespan_ties": 680,
+      "makespan_wins": 10,
+      "objective_delta_vs_tuned": 0.0736282159090349,
+      "objective_vs_v1": 1.0509068033068525,
+      "task_retries": 90,
+      "variant": "without-load-balance",
+      "weights": {
+        "data_locality": 11.917340550242029,
+        "failure_penalty": -20.961182779881938,
+        "load_balance": 0.0,
+        "memory_pressure": -7.579846709950957,
+        "node_availability": 6.500229571922376,
+        "resource_fit": 19.334561188597583,
+        "type_affinity": 25.04842283582731,
+        "warm_image": 33.65841636357779
+      }
+    },
+    {
+      "components_vs_v1": {
+        "deadline_lateness_ratio": 1.0,
+        "mean_energy_ratio": 1.026407250862128,
+        "mean_makespan_ratio": 1.0325738696224172,
+        "mean_response_ratio": 1.0416325817860066,
+        "mean_transfer_ratio": 1.3825317194306075,
+        "p95_makespan_ratio": 1.0969337750750863
+      },
+      "deadline_misses": 8,
+      "makespan_losses": 120,
+      "makespan_ties": 620,
+      "makespan_wins": 10,
+      "objective_delta_vs_tuned": 0.08477860727293152,
+      "objective_vs_v1": 1.062057194670749,
+      "task_retries": 170,
+      "variant": "without-data-locality",
+      "weights": {
+        "data_locality": 0.0,
+        "failure_penalty": -21.761227099122,
+        "load_balance": 7.601212961098109,
+        "memory_pressure": -7.869153537942887,
+        "node_availability": 6.748329681414481,
+        "resource_fit": 20.07252077830085,
+        "type_affinity": 26.00446852304685,
+        "warm_image": 34.94308741907482
+      }
+    },
+    {
+      "components_vs_v1": {
+        "deadline_lateness_ratio": 1.0103008194507503,
+        "mean_energy_ratio": 1.2462856473523758,
+        "mean_makespan_ratio": 1.3562424277967071,
+        "mean_response_ratio": 1.1356803348511848,
+        "mean_transfer_ratio": 1.5300386848920813,
+        "p95_makespan_ratio": 3.2473825998836627
+      },
+      "deadline_misses": 18,
+      "makespan_losses": 190,
+      "makespan_ties": 490,
+      "makespan_wins": 70,
+      "objective_delta_vs_tuned": 0.7045046152674901,
+      "objective_vs_v1": 1.6817832026653077,
+      "task_retries": 33,
+      "variant": "without-type-affinity",
+      "weights": {
+        "data_locality": 13.886653025711887,
+        "failure_penalty": -24.424968896843005,
+        "load_balance": 8.531659970617742,
+        "memory_pressure": -8.832398537695145,
+        "node_availability": 7.574377208757749,
+        "resource_fit": 22.529551916261845,
+        "type_affinity": 0.0,
+        "warm_image": 39.2203904441126
+      }
+    }
+  ],
+  "schema_version": 1
+}

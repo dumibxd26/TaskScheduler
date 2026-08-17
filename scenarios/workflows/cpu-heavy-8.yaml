@@ -1,0 +1,15 @@
+schema_version: 1
+workflow:
+  id: cpu-heavy-8
+  family: cpu-heavy
+  tags: [resource, cpu, parallelism, thermal]
+  description: Eight independent highly parallel compute tasks stress CPU packing and heat.
+  tasks:
+    - &compute {id: cpu-1, class: CPU_BOUND, image: bench/cpu:v1, image_size_mib: 96, startup_s: 0.15, supported_architectures: [amd64, arm64], cpu_cores: 2, memory_mib: 768, working_set_mib: 256, compute_gflop: 600, memory_read_mib: 400, parallel_fraction: 0.96, checkpointable: true, checkpoint_interval_s: 20, checkpoint_size_mib: 32}
+    - {<<: *compute, id: cpu-2}
+    - {<<: *compute, id: cpu-3}
+    - {<<: *compute, id: cpu-4}
+    - {<<: *compute, id: cpu-5}
+    - {<<: *compute, id: cpu-6}
+    - {<<: *compute, id: cpu-7}
+    - {<<: *compute, id: cpu-8}

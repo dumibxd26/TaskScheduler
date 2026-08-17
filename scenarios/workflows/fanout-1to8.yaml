@@ -1,0 +1,25 @@
+schema_version: 1
+workflow:
+  id: fanout-1to8
+  family: fan-out
+  tags: [topology, parallelism, network]
+  description: One source distributes a common dataset to eight CPU workers.
+  tasks:
+    - {id: source, class: IO_BOUND, image: bench/io:v1, image_size_mib: 72, startup_s: 0.2, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 1024, disk_read_mib: 4096}
+    - &worker {id: worker-1, class: CPU_BOUND, image: bench/cpu:v1, image_size_mib: 96, startup_s: 0.15, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 512, working_set_mib: 192, compute_gflop: 72}
+    - {<<: *worker, id: worker-2}
+    - {<<: *worker, id: worker-3}
+    - {<<: *worker, id: worker-4}
+    - {<<: *worker, id: worker-5}
+    - {<<: *worker, id: worker-6}
+    - {<<: *worker, id: worker-7}
+    - {<<: *worker, id: worker-8}
+  dependencies:
+    - {parent: source, child: worker-1, data_mib: 1024}
+    - {parent: source, child: worker-2, data_mib: 1024}
+    - {parent: source, child: worker-3, data_mib: 1024}
+    - {parent: source, child: worker-4, data_mib: 1024}
+    - {parent: source, child: worker-5, data_mib: 1024}
+    - {parent: source, child: worker-6, data_mib: 1024}
+    - {parent: source, child: worker-7, data_mib: 1024}
+    - {parent: source, child: worker-8, data_mib: 1024}

@@ -1,0 +1,16 @@
+schema_version: 1
+workload:
+  id: priority-burst
+  description: CPU-saturating batch work is interrupted by a critical three-stage workflow.
+  submissions:
+    - id: background
+      workflow_file: ../workflows/cpu-heavy-8.yaml
+      arrival_s: 0
+      priority: BATCH
+      preemptable: true
+    - id: urgent
+      workflow_file: ../workflows/critical-deadline.yaml
+      arrival_s: 2
+      priority: CRITICAL
+      preemptable: false
+      deadline_s: 12

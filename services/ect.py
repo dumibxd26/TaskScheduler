@@ -47,7 +47,7 @@ def _get_expected_runtime(store: ProfileStore, task_template_id: str,
             task_template_id, node.node_id, bucket)
         if bucketed is not None:
             return bucketed
-    rt = store.get_expected_runtime(task_template_id, node.node_id)
+    rt = store.get_node_median_runtime(task_template_id, node.node_id)
     if rt is not None:
         return rt
     return DEFAULT_RUNTIME_S
@@ -83,6 +83,13 @@ def transfer_seconds(task: TaskInstance, tmpl: TaskTemplate,
     registry has no record (typical in simulation, where the data plane is
     stubbed). This keeps the ECT estimate honest about co-location.
     """
+    if task.input_bytes_by_node:
+        return sum(
+            size_bytes / cluster.get_bandwidth(producer_node, node.node_id)
+            for producer_node, size_bytes in task.input_bytes_by_node.items()
+            if producer_node != node.node_id and size_bytes > 0
+        )
+
     total = 0.0
     for edge in wf_tmpl.edges:
         if edge.child_task_id != task.task_template_id:

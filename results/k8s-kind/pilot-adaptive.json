@@ -1,0 +1,635 @@
+{
+  "cluster": {
+    "context": "kind-ts-cluster",
+    "evidence_scope": "single-host Kind worker containers with Docker cgroup caps; not independent physical machines",
+    "nodes": [
+      {
+        "bandwidth_annotation_count": 3,
+        "capacity_cpu": null,
+        "capacity_memory_mib": null,
+        "cooling_class": null,
+        "cpu_temperature_c": "51.8",
+        "name": "ts-cluster-control-plane",
+        "node_type": null,
+        "thermal_throttle_c": null
+      },
+      {
+        "bandwidth_annotation_count": 3,
+        "capacity_cpu": "2.0",
+        "capacity_memory_mib": "1024",
+        "cooling_class": "STANDARD",
+        "cpu_temperature_c": "51.8",
+        "name": "ts-node-cpu-1",
+        "node_type": "CPU_OPT",
+        "thermal_throttle_c": "100"
+      },
+      {
+        "bandwidth_annotation_count": 3,
+        "capacity_cpu": "1.0",
+        "capacity_memory_mib": "768",
+        "cooling_class": "STANDARD",
+        "cpu_temperature_c": "57.5",
+        "name": "ts-node-io-1",
+        "node_type": "IO_OPT",
+        "thermal_throttle_c": "100"
+      },
+      {
+        "bandwidth_annotation_count": 3,
+        "capacity_cpu": "1.0",
+        "capacity_memory_mib": "1536",
+        "cooling_class": "STANDARD",
+        "cpu_temperature_c": "51.8",
+        "name": "ts-node-mem-1",
+        "node_type": "MEM_OPT",
+        "thermal_throttle_c": "100"
+      }
+    ]
+  },
+  "completed_at": "2026-08-16T18:08:37.425449Z",
+  "experiment": "kind-policy-comparison",
+  "policies": {
+    "adaptive": {
+      "scheduler": {
+        "pod": "ts-scheduler-78958cfb57-2hkj4",
+        "profile_configmap": "ts-profiles-adaptive-20260816180439",
+        "profile_path": "/data/profiles-adaptive-20260816180439.json"
+      },
+      "summary": {
+        "by_shape": {
+          "critical": {
+            "completed": 1,
+            "median_response_seconds": 72.137568
+          },
+          "fanout": {
+            "completed": 1,
+            "median_response_seconds": 104.058193
+          },
+          "parallel": {
+            "completed": 1,
+            "median_response_seconds": 108.318338
+          },
+          "pipeline": {
+            "completed": 1,
+            "median_response_seconds": 123.003263
+          },
+          "pressure": {
+            "completed": 1,
+            "median_response_seconds": 183.582082
+          }
+        },
+        "completion_rate": 1.0,
+        "local_reads": 0,
+        "median_critical_response_seconds": 72.137568,
+        "median_task_runtime_seconds": 31.0,
+        "median_trial_makespan_seconds": 183.582082,
+        "median_trial_mean_response_seconds": 118.2198888,
+        "median_workflow_response_seconds": 108.318338,
+        "p95_workflow_response_seconds": 183.582082,
+        "placements_by_node": {
+          "ts-node-cpu-1": 10,
+          "ts-node-io-1": 5,
+          "ts-node-mem-1": 5
+        },
+        "preemptions": 5,
+        "remote_fetches": 1,
+        "successful_workflows": 5,
+        "total_transfer_seconds": 3.1613004207611084,
+        "trials": 1,
+        "workflows": 5
+      },
+      "trials": [
+        {
+          "finished_at": "2026-08-16T18:08:37.415663Z",
+          "makespan_seconds": 183.582082,
+          "mean_response_seconds": 118.2198888,
+          "policy": "adaptive",
+          "preemptions": 5,
+          "priority_delay_seconds": 7.0,
+          "repetition": 1,
+          "scheduler_events": {
+            "binding_lines": [
+              "[BIND] 'ts-exp-adaptive-r1-pressure-long-1-a25c5413' -> 'ts-node-cpu-1'",
+              "[BIND] 'ts-exp-adaptive-r1-pressure-long-2-a25c5413' -> 'ts-node-cpu-1'",
+              "[BIND] 'ts-exp-adaptive-r1-pressure-long-3-a25c5413' -> 'ts-node-cpu-1'",
+              "[BIND] 'ts-exp-adaptive-r1-pressure-long-5-a25c5413' -> 'ts-node-mem-1'",
+              "[BIND] 'ts-exp-adaptive-r1-pressure-long-4-a25c5413' -> 'ts-node-io-1'",
+              "[BIND] 'ts-exp-adaptive-r1-critical-urgent-1-2fd531f5' -> 'ts-node-cpu-1'",
+              "[BIND] 'ts-exp-adaptive-r1-critical-urgent-2-2fd531f5' -> 'ts-node-cpu-1'",
+              "[BIND] 'ts-exp-adaptive-r1-pipeline-ingest-88b716e1' -> 'ts-node-io-1'",
+              "[BIND] 'ts-exp-adaptive-r1-fanout-source-ee524758' -> 'ts-node-mem-1'",
+              "[BIND] 'ts-exp-adaptive-r1-parallel-cpu-1-e6eea54f' -> 'ts-node-cpu-1'",
+              "[BIND] 'ts-exp-adaptive-r1-parallel-io-e6eea54f' -> 'ts-node-io-1'",
+              "[BIND] 'ts-exp-adaptive-r1-parallel-memory-e6eea54f' -> 'ts-node-mem-1'",
+              "[BIND] 'ts-exp-adaptive-r1-pipeline-stage-88b716e1' -> 'ts-node-mem-1'",
+              "[BIND] 'ts-exp-adaptive-r1-fanout-leaf-1-ee524758' -> 'ts-node-io-1'",
+              "[BIND] 'ts-exp-adaptive-r1-fanout-leaf-2-ee524758' -> 'ts-node-cpu-1'",
+              "[BIND] 'ts-exp-adaptive-r1-fanout-leaf-3-ee524758' -> 'ts-node-cpu-1'",
+              "[BIND] 'ts-exp-adaptive-r1-fanout-leaf-4-ee524758' -> 'ts-node-cpu-1'",
+              "[BIND] 'ts-exp-adaptive-r1-parallel-cpu-2-e6eea54f' -> 'ts-node-mem-1'",
+              "[BIND] 'ts-exp-adaptive-r1-pipeline-crunch-88b716e1' -> 'ts-node-io-1'",
+              "[BIND] 'ts-exp-adaptive-r1-pressure-long-6-a25c5413' -> 'ts-node-cpu-1'",
+              "[BIND] 'ts-exp-adaptive-r1-pressure-long-4-a25c5413' -> 'ts-node-cpu-1'",
+              "[BIND] 'ts-exp-adaptive-r1-pressure-long-5-a25c5413' -> 'ts-node-cpu-1'",
+              "[BIND] 'ts-exp-adaptive-r1-pressure-long-1-a25c5413' -> 'ts-node-mem-1'",
+              "[BIND] 'ts-exp-adaptive-r1-pressure-long-2-a25c5413' -> 'ts-node-io-1'",
+              "[BIND] 'ts-exp-adaptive-r1-pressure-long-3-a25c5413' -> 'ts-node-cpu-1'"
+            ],
+            "error_lines": [],
+            "preemption_lines": [
+              "[PREEMPT] 'ts-exp-adaptive-r1-pressure-long-4-a25c5413' from ts-node-io-1 (kill_restart)",
+              "[PREEMPT] 'ts-exp-adaptive-r1-pressure-long-5-a25c5413' from ts-node-mem-1 (kill_restart)",
+              "[PREEMPT] 'ts-exp-adaptive-r1-pressure-long-3-a25c5413' from ts-node-cpu-1 (kill_restart)",
+              "[PREEMPT] 'ts-exp-adaptive-r1-pressure-long-2-a25c5413' from ts-node-cpu-1 (kill_restart)",
+              "[PREEMPT] 'ts-exp-adaptive-r1-pressure-long-1-a25c5413' from ts-node-cpu-1 (kill_restart)"
+            ]
+          },
+          "started_at": "2026-08-16T18:05:32.381785Z",
+          "workflows": [
+            {
+              "creation_timestamp": "2026-08-16T18:05:32Z",
+              "execution_seconds": 182.409135,
+              "finished_at": "2026-08-16T18:08:35.582082Z",
+              "message": "",
+              "name": "ts-exp-adaptive-r1-pressure",
+              "response_seconds": 183.582082,
+              "shape": "pressure",
+              "started_at": "2026-08-16T18:05:33.172947Z",
+              "state": "FINISHED",
+              "tasks": [
+                {
+                  "container_runtime_seconds": 37.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "long-1",
+                  "node_name": "ts-node-mem-1",
+                  "pod_name": "ts-exp-adaptive-r1-pressure-long-1-a25c5413",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 1.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 40.10319,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 33.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "long-2",
+                  "node_name": "ts-node-io-1",
+                  "pod_name": "ts-exp-adaptive-r1-pressure-long-2-a25c5413",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 1.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 36.816338,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 29.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "long-3",
+                  "node_name": "ts-node-cpu-1",
+                  "pod_name": "ts-exp-adaptive-r1-pressure-long-3-a25c5413",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 1.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 32.448521,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 38.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "long-4",
+                  "node_name": "ts-node-cpu-1",
+                  "pod_name": "ts-exp-adaptive-r1-pressure-long-4-a25c5413",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 1.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 42.3561,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 38.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "long-5",
+                  "node_name": "ts-node-cpu-1",
+                  "pod_name": "ts-exp-adaptive-r1-pressure-long-5-a25c5413",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 1.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 41.382558,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 41.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "long-6",
+                  "node_name": "ts-node-cpu-1",
+                  "pod_name": "ts-exp-adaptive-r1-pressure-long-6-a25c5413",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 0.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 43.299949,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                }
+              ],
+              "tasks_failed": 0,
+              "tasks_finished": 6
+            },
+            {
+              "creation_timestamp": "2026-08-16T18:05:39Z",
+              "execution_seconds": 70.654999,
+              "finished_at": "2026-08-16T18:06:51.137568Z",
+              "message": "",
+              "name": "ts-exp-adaptive-r1-critical",
+              "response_seconds": 72.137568,
+              "shape": "critical",
+              "started_at": "2026-08-16T18:05:40.482569Z",
+              "state": "FINISHED",
+              "tasks": [
+                {
+                  "container_runtime_seconds": 57.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "urgent-1",
+                  "node_name": "ts-node-cpu-1",
+                  "pod_name": "ts-exp-adaptive-r1-critical-urgent-1-2fd531f5",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 8.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 67.788188,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 57.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "urgent-2",
+                  "node_name": "ts-node-cpu-1",
+                  "pod_name": "ts-exp-adaptive-r1-critical-urgent-2-2fd531f5",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 7.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 66.850565,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                }
+              ],
+              "tasks_failed": 0,
+              "tasks_finished": 2
+            },
+            {
+              "creation_timestamp": "2026-08-16T18:05:39Z",
+              "execution_seconds": 121.260949,
+              "finished_at": "2026-08-16T18:07:42.003263Z",
+              "message": "",
+              "name": "ts-exp-adaptive-r1-pipeline",
+              "response_seconds": 123.003263,
+              "shape": "pipeline",
+              "started_at": "2026-08-16T18:05:40.742314Z",
+              "state": "FINISHED",
+              "tasks": [
+                {
+                  "container_runtime_seconds": 8.0,
+                  "metrics": {
+                    "io_bytes_read": 104857600,
+                    "io_bytes_written": 104857600,
+                    "output_bytes_by_field": {
+                      "generated_file_path": 104857600
+                    },
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "ingest",
+                  "node_name": "ts-node-io-1",
+                  "pod_name": "ts-exp-adaptive-r1-pipeline-ingest-88b716e1",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 3.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 14.962879,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 10.0,
+                  "metrics": {
+                    "io_bytes_read": 104857600,
+                    "io_bytes_written": 0,
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 3.1613004207611084
+                  },
+                  "name": "stage",
+                  "node_name": "ts-node-mem-1",
+                  "pod_name": "ts-exp-adaptive-r1-pipeline-stage-88b716e1",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 1.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 14.8159,
+                  "transfer_mode": "remote",
+                  "transfer_source": "[FETCH] http://172.18.0.3:8080/ts-exp-adaptive-r1-pipeline/ts-exp-adaptive-r1-pipeline-ingest-88b716e1/generated_file.dat -> /data/inputs/generated_file.dat"
+                },
+                {
+                  "container_runtime_seconds": 20.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "crunch",
+                  "node_name": "ts-node-io-1",
+                  "pod_name": "ts-exp-adaptive-r1-pipeline-crunch-88b716e1",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 1.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 23.802665,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                }
+              ],
+              "tasks_failed": 0,
+              "tasks_finished": 3
+            },
+            {
+              "creation_timestamp": "2026-08-16T18:05:39Z",
+              "execution_seconds": 102.118407,
+              "finished_at": "2026-08-16T18:07:23.058193Z",
+              "message": "",
+              "name": "ts-exp-adaptive-r1-fanout",
+              "response_seconds": 104.058193,
+              "shape": "fanout",
+              "started_at": "2026-08-16T18:05:40.939786Z",
+              "state": "FINISHED",
+              "tasks": [
+                {
+                  "container_runtime_seconds": 5.0,
+                  "metrics": {
+                    "io_bytes_read": 104857600,
+                    "io_bytes_written": 104857600,
+                    "output_bytes_by_field": {
+                      "generated_file_path": 104857600
+                    },
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "source",
+                  "node_name": "ts-node-mem-1",
+                  "pod_name": "ts-exp-adaptive-r1-fanout-source-ee524758",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 7.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 15.252312,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 25.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "leaf-1",
+                  "node_name": "ts-node-io-1",
+                  "pod_name": "ts-exp-adaptive-r1-fanout-leaf-1-ee524758",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 1.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 28.834575,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 26.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "leaf-2",
+                  "node_name": "ts-node-cpu-1",
+                  "pod_name": "ts-exp-adaptive-r1-fanout-leaf-2-ee524758",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 1.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 28.793681,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 27.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "leaf-3",
+                  "node_name": "ts-node-cpu-1",
+                  "pod_name": "ts-exp-adaptive-r1-fanout-leaf-3-ee524758",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 1.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 29.865167,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 26.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "leaf-4",
+                  "node_name": "ts-node-cpu-1",
+                  "pod_name": "ts-exp-adaptive-r1-fanout-leaf-4-ee524758",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 1.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 29.007824,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                }
+              ],
+              "tasks_failed": 0,
+              "tasks_finished": 5
+            },
+            {
+              "creation_timestamp": "2026-08-16T18:05:39Z",
+              "execution_seconds": 105.46211,
+              "finished_at": "2026-08-16T18:07:27.318338Z",
+              "message": "",
+              "name": "ts-exp-adaptive-r1-parallel",
+              "response_seconds": 108.318338,
+              "shape": "parallel",
+              "started_at": "2026-08-16T18:05:41.856228Z",
+              "state": "FINISHED",
+              "tasks": [
+                {
+                  "container_runtime_seconds": 42.0,
+                  "metrics": {
+                    "io_bytes_read": 104857600,
+                    "io_bytes_written": 104857600,
+                    "output_bytes_by_field": {
+                      "generated_file_path": 104857600
+                    },
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "io",
+                  "node_name": "ts-node-io-1",
+                  "pod_name": "ts-exp-adaptive-r1-parallel-io-e6eea54f",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 3.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 47.717735,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 36.0,
+                  "metrics": {
+                    "io_bytes_read": 0,
+                    "io_bytes_written": 0,
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "memory",
+                  "node_name": "ts-node-mem-1",
+                  "pod_name": "ts-exp-adaptive-r1-parallel-memory-e6eea54f",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 3.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 42.270373,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 53.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "cpu-1",
+                  "node_name": "ts-node-cpu-1",
+                  "pod_name": "ts-exp-adaptive-r1-parallel-cpu-1-e6eea54f",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 9.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 63.999308,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                },
+                {
+                  "container_runtime_seconds": 21.0,
+                  "metrics": {
+                    "output_bytes_by_field": {},
+                    "transfer_seconds": 0.0
+                  },
+                  "name": "cpu-2",
+                  "node_name": "ts-node-mem-1",
+                  "pod_name": "ts-exp-adaptive-r1-parallel-cpu-2-e6eea54f",
+                  "pod_phase": "Succeeded",
+                  "restart_count": 0,
+                  "startup_seconds": 2.0,
+                  "state": "FINISHED",
+                  "status_runtime_seconds": 25.947674,
+                  "transfer_mode": null,
+                  "transfer_source": null
+                }
+              ],
+              "tasks_failed": 0,
+              "tasks_finished": 4
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "priority_delay_seconds": 7.0,
+  "repetitions": 1,
+  "run_id": "20260816180439",
+  "schema_version": 1,
+  "seed": 0,
+  "started_at": "2026-08-16T18:04:40.447845Z",
+  "summary": {
+    "adaptive": {
+      "by_shape": {
+        "critical": {
+          "completed": 1,
+          "median_response_seconds": 72.137568
+        },
+        "fanout": {
+          "completed": 1,
+          "median_response_seconds": 104.058193
+        },
+        "parallel": {
+          "completed": 1,
+          "median_response_seconds": 108.318338
+        },
+        "pipeline": {
+          "completed": 1,
+          "median_response_seconds": 123.003263
+        },
+        "pressure": {
+          "completed": 1,
+          "median_response_seconds": 183.582082
+        }
+      },
+      "completion_rate": 1.0,
+      "local_reads": 0,
+      "median_critical_response_seconds": 72.137568,
+      "median_task_runtime_seconds": 31.0,
+      "median_trial_makespan_seconds": 183.582082,
+      "median_trial_mean_response_seconds": 118.2198888,
+      "median_workflow_response_seconds": 108.318338,
+      "p95_workflow_response_seconds": 183.582082,
+      "placements_by_node": {
+        "ts-node-cpu-1": 10,
+        "ts-node-io-1": 5,
+        "ts-node-mem-1": 5
+      },
+      "preemptions": 5,
+      "remote_fetches": 1,
+      "successful_workflows": 5,
+      "total_transfer_seconds": 3.1613004207611084,
+      "trials": 1,
+      "workflows": 5
+    }
+  }
+}

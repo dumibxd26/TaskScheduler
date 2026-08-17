@@ -1,0 +1,54 @@
+schema_version: 1
+cluster:
+  id: balanced-heterogeneous-4
+  family: balanced-heterogeneous
+  description: Complementary CPU, memory, storage, and general-purpose nodes.
+  calibration:
+    status: synthetic
+    source: Controlled specialization scenario, not a claim about specific hardware.
+    uncertainty_fraction: 0
+  registry_endpoint: registry
+  network_vertices: [switch]
+  nodes:
+    - id: cpu-fast
+      type: CPU_OPT
+      cooling_class: HIGH
+      background_cpu_fraction: 0.02
+      background_memory_mib: 512
+      cpu: {architecture: amd64, microarchitecture: synthetic-wide, physical_cores: 8, threads_per_core: 2, base_frequency_ghz: 3.2, max_frequency_ghz: 4.8, calibrated_gflops_per_core: 22, l3_cache_mib: 32, idle_power_w: 18, max_power_w: 125, smt_efficiency: 0.35, vector_extensions: [AVX2]}
+      memory: {capacity_mib: 16384, calibrated_bandwidth_mib_s: 28000, latency_ns: 70, channels: 2}
+      storage: {capacity_mib: 512000, sequential_read_mib_s: 1800, sequential_write_mib_s: 1400, random_read_iops: 160000, random_write_iops: 120000}
+      thermal: {ambient_c: 22, initial_c: 34, throttle_c: 90, shutdown_c: 100, thermal_resistance_c_per_w: 0.42, thermal_capacitance_j_per_c: 150, minimum_throttle_factor: 0.65}
+    - id: memory-wide
+      type: MEM_OPT
+      cooling_class: STANDARD
+      background_cpu_fraction: 0.03
+      background_memory_mib: 1024
+      cpu: {architecture: amd64, microarchitecture: synthetic-memory, physical_cores: 6, threads_per_core: 2, base_frequency_ghz: 2.5, max_frequency_ghz: 3.4, calibrated_gflops_per_core: 10, l3_cache_mib: 48, idle_power_w: 14, max_power_w: 85, smt_efficiency: 0.3}
+      memory: {capacity_mib: 65536, calibrated_bandwidth_mib_s: 72000, latency_ns: 62, channels: 4}
+      storage: {capacity_mib: 1024000, sequential_read_mib_s: 2000, sequential_write_mib_s: 1600, random_read_iops: 180000, random_write_iops: 130000}
+      thermal: {ambient_c: 22, initial_c: 33, throttle_c: 88, shutdown_c: 98, thermal_resistance_c_per_w: 0.58, thermal_capacitance_j_per_c: 130, minimum_throttle_factor: 0.6}
+    - id: io-fast
+      type: IO_OPT
+      cooling_class: STANDARD
+      background_cpu_fraction: 0.03
+      background_memory_mib: 512
+      cpu: {architecture: amd64, microarchitecture: synthetic-io, physical_cores: 4, threads_per_core: 2, base_frequency_ghz: 2.6, max_frequency_ghz: 3.6, calibrated_gflops_per_core: 9, l3_cache_mib: 12, idle_power_w: 11, max_power_w: 60, smt_efficiency: 0.28}
+      memory: {capacity_mib: 16384, calibrated_bandwidth_mib_s: 26000, latency_ns: 72, channels: 2}
+      storage: {capacity_mib: 2048000, sequential_read_mib_s: 7000, sequential_write_mib_s: 5500, random_read_iops: 900000, random_write_iops: 700000}
+      thermal: {ambient_c: 22, initial_c: 32, throttle_c: 86, shutdown_c: 96, thermal_resistance_c_per_w: 0.62, thermal_capacitance_j_per_c: 110, minimum_throttle_factor: 0.58}
+    - id: arm-edge
+      type: GENERAL
+      cooling_class: PASSIVE
+      background_cpu_fraction: 0.05
+      background_memory_mib: 384
+      cpu: {architecture: arm64, microarchitecture: synthetic-edge, physical_cores: 6, threads_per_core: 1, base_frequency_ghz: 2.0, max_frequency_ghz: 2.5, calibrated_gflops_per_core: 7, l3_cache_mib: 8, idle_power_w: 4, max_power_w: 24, smt_efficiency: 0}
+      memory: {capacity_mib: 8192, calibrated_bandwidth_mib_s: 15000, latency_ns: 95, channels: 2}
+      storage: {capacity_mib: 256000, sequential_read_mib_s: 900, sequential_write_mib_s: 650, random_read_iops: 80000, random_write_iops: 50000}
+      thermal: {ambient_c: 25, initial_c: 39, throttle_c: 78, shutdown_c: 88, thermal_resistance_c_per_w: 1.8, thermal_capacitance_j_per_c: 55, minimum_throttle_factor: 0.4}
+  links:
+    - {id: cpu-link, endpoints: [cpu-fast, switch], bandwidth_mib_s: 238, latency_ms: 0.2}
+    - {id: memory-link, endpoints: [memory-wide, switch], bandwidth_mib_s: 238, latency_ms: 0.2}
+    - {id: io-link, endpoints: [io-fast, switch], bandwidth_mib_s: 238, latency_ms: 0.2}
+    - {id: edge-link, endpoints: [arm-edge, switch], bandwidth_mib_s: 60, latency_ms: 3.5, jitter_ms: 1.0, packet_loss_rate: 0.002, medium: wifi}
+    - {id: registry-link, endpoints: [registry, switch], bandwidth_mib_s: 476, latency_ms: 0.2}

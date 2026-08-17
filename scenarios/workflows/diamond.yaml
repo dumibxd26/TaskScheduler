@@ -1,0 +1,19 @@
+schema_version: 1
+workflow:
+  id: diamond
+  family: diamond
+  tags: [topology, fork-join]
+  description: One producer, three parallel specialists, and one reducer.
+  tasks:
+    - {id: ingest, class: IO_BOUND, image: bench/io:v1, image_size_mib: 72, startup_s: 0.25, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 768, disk_read_mib: 2048, random_io_fraction: 0.1}
+    - {id: cpu-branch, class: CPU_BOUND, image: bench/cpu:v1, image_size_mib: 96, startup_s: 0.2, supported_architectures: [amd64, arm64], cpu_cores: 2, memory_mib: 768, working_set_mib: 256, compute_gflop: 160, parallel_fraction: 0.9}
+    - {id: memory-branch, class: MEMORY_BOUND, image: bench/memory:v1, image_size_mib: 80, startup_s: 0.2, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 2048, working_set_mib: 1536, compute_gflop: 12, memory_read_mib: 12000, memory_write_mib: 4000}
+    - {id: io-branch, class: IO_BOUND, image: bench/io:v1, image_size_mib: 72, startup_s: 0.2, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 768, disk_read_mib: 3000, disk_write_mib: 1500, random_io_fraction: 0.35, io_block_kib: 16}
+    - {id: reduce, class: CPU_BOUND, image: bench/mixed:v1, image_size_mib: 110, startup_s: 0.25, supported_architectures: [amd64, arm64], cpu_cores: 2, memory_mib: 1536, working_set_mib: 768, compute_gflop: 96, memory_read_mib: 3000, parallel_fraction: 0.75}
+  dependencies:
+    - {parent: ingest, child: cpu-branch, data_mib: 512}
+    - {parent: ingest, child: memory-branch, data_mib: 512}
+    - {parent: ingest, child: io-branch, data_mib: 512}
+    - {parent: cpu-branch, child: reduce, data_mib: 256}
+    - {parent: memory-branch, child: reduce, data_mib: 512}
+    - {parent: io-branch, child: reduce, data_mib: 384}

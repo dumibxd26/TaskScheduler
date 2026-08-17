@@ -105,7 +105,7 @@ systemctl restart k3s-agent"
     # Suggested label command (run on pc1 after all agents join).
     echo "    [${NAME}] label hint:"
     echo "        kubectl label --overwrite node ${NAME} node-type=${NODE_TYPE} \\"
-    echo "            ts.capacity/cpu=${CPU} ts.capacity/memory=${MEM_MB} ts.cooling-class=${COOL}"
+    echo "            ts.capacity/cpu=${CPU} ts.capacity/memory=${MEM_MB} ts.io/cooling-class=${COOL}"
 }
 
 if [[ "${USE_MULTIPASS}" -eq 1 ]]; then
@@ -148,6 +148,6 @@ fi
 echo ""
 echo "=== Agents launched ==="
 echo "On pc1 (Mac mini), verify and label:"
-echo "  kubectl get nodes -L node-type -L ts.cooling-class"
+echo "  kubectl get nodes -L node-type -L ts.io/cooling-class"
 echo ""
 echo "Then paste the label hints printed above for each ts-node-* node."

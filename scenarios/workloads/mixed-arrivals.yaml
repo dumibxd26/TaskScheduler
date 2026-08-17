@@ -1,0 +1,22 @@
+schema_version: 1
+workload:
+  id: mixed-arrivals
+  description: Repeated mixed and topology workflows arrive in overlapping bursts.
+  submissions:
+    - id: etl
+      workflow_file: ../workflows/mixed-etl.yaml
+      arrival_s: 0
+      count: 3
+      interval_s: 4
+      priority: BATCH
+    - id: analytics
+      workflow_file: ../workflows/diamond.yaml
+      arrival_s: 2
+      count: 2
+      interval_s: 6
+      priority: REAL_TIME_MEDIUM
+    - id: urgent
+      workflow_file: ../workflows/critical-deadline.yaml
+      arrival_s: 7
+      priority: CRITICAL
+      preemptable: false

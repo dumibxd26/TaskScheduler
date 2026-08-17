@@ -1,0 +1,8 @@
+schema_version: 1
+workflow:
+  id: checkpoint-long
+  family: failure-recovery
+  tags: [failure, checkpoint, long-running]
+  description: A long compute stage demonstrates checkpoint benefit under node failures.
+  tasks:
+    - {id: long-compute, class: CPU_BOUND, image: bench/cpu:v1, image_size_mib: 96, startup_s: 0.2, supported_architectures: [amd64, arm64], cpu_cores: 2, memory_mib: 1024, working_set_mib: 384, compute_gflop: 2400, memory_read_mib: 2000, parallel_fraction: 0.94, checkpointable: true, checkpoint_interval_s: 15, checkpoint_size_mib: 64}

@@ -1,6 +1,50 @@
-# TaskScheduler Summary
+# TaskScheduler Status Summary
 
-At its core, this project is an adaptive task scheduler for DAG-based workflows running on a heterogeneous cluster. The scheduler learns from past executions and improves future placement decisions over time. The learning is kept entirely in memory and is keyed by `task_template_id`, which means the system learns **task placement**, not whole-workflow placement.
+TaskScheduler now consists of two distinct execution surfaces:
+
+- a deterministic discrete-event experiment lab under `simulation/`, with
+	nine policies and explicit CPU, memory/cache, storage, network, thermal,
+	energy, failure/repair, checkpoint, gang, release, and preemption behavior;
+- a Kubernetes-native Workflow controller and custom scheduler under
+	`controlplane/`, with exact Legacy v1, tuned Legacy, and Adaptive policies,
+	persisted profiles, producer-local data, telemetry, binding, and kill/restart
+	preemption.
+
+The retained exploratory evaluation contains 13,800 closed-DAG and 3,600
+overlapping-workload records. Fresh-seed confirmation adds 26,250 closed-DAG
+and 7,000 overlapping-workload records. A normalized 256-candidate Legacy
+weight search, 750-case-per-variant ablation, controlled factor stresses, and
+an earlier six-trial same-host Kind pilot are also retained. The final local
+stage contains 27 trials, 135 workflows, and 540 successful final task records
+for Legacy v1, tuned Legacy, and Adaptive across three recreated Kind capacity
+profiles. Physical multi-machine k3s validation remains pending.
+The simulator and live policies are related but independent implementations;
+historical simulator Legacy is not the exact live scorer.
+
+Fresh-seed confirmation selects no universal policy. HEFT is the strongest
+closed-DAG default (1.69% mean and 5.75% P95 deployable regret), with EFT a
+close simpler alternative. Under overlapping arrivals, historical Legacy has
+the highest deadline hit rate (60.00%), Adaptive has the lowest P95 response
+regret (35.07%), and EFT/HEFT have the lowest median energy. Tuned exact
+Legacy improves exact v1 pairwise for closed makespan and overlapping response,
+so it is the preferred exact Legacy vector, but it does not overtake the
+objective leaders above. Adaptive without preemption retains the best median
+workload makespan with a modest response-tail penalty and no interruption cost.
+In same-host Kind, tuned Legacy lowers v1 makespan in all three profiles and by
+3.50% in aggregate. Adaptive lowers median workflow response by 19.40% versus
+tuned Legacy but raises makespan by 14.80% with 44 kill/restart preemptions.
+Per-repetition timings are non-monotonic, so profile accumulation does not
+guarantee that Legacy becomes faster on every successive run.
+
+Current setup and results are documented in `README.md`, `ARCHITECTURE.md`,
+`ENGINEERING_JOURNAL.md`, and `thesis/thesis.tex`.
+
+## Historical Legacy learning notes
+
+The remainder of this file describes the original Legacy in-process learning
+path. It is retained as subsystem background, not as a complete description of
+the current project. Live profiles are now persisted rather than memory-only,
+and Adaptive has a separate ECT/UCB/risk score.
 
 ## 1. In-Memory Profiling
 

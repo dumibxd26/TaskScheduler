@@ -79,11 +79,13 @@ def _measure_bw(peer_ip: str) -> float:
 
 
 def _annotate_self(core: client.CoreV1Api, results: Dict[str, float]):
-    """Patch annotations ts.io/bw-to-<peer>=<MB/s> onto the self Node."""
+    """Publish peer-to-self download rates on the self Node."""
     annotations = {
-        f"ts.io/bw-to-{peer}": f"{mbps:.2f}"
+        f"ts.io/bw-from-{peer}": f"{mbps:.2f}"
         for peer, mbps in results.items()
     }
+    for peer in results:
+        annotations[f"ts.io/bw-to-{peer}"] = None
     annotations["ts.io/bw-last-probed-at"] = str(int(time.time()))
     body = {"metadata": {"annotations": annotations}}
     try:

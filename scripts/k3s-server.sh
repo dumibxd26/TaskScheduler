@@ -142,11 +142,11 @@ kubectl label --overwrite node ts-master \
     node-type=MEM_OPT \
     ts.capacity/cpu="${CAP_CPU}" \
     ts.capacity/memory="${CAP_MEM}" \
-    ts.cooling-class="${CAP_COOL}"
+    ts.io/cooling-class="${CAP_COOL}"
 
 echo ""
 echo "=== pc1 (Mac mini) control plane ready ==="
-kubectl get nodes -L node-type -L ts.cooling-class
+kubectl get nodes -L node-type -L ts.io/cooling-class
 echo ""
 echo "SERVER_IP=${SERVER_IP}    (already written to ${ENV_FILE})"
 echo ""

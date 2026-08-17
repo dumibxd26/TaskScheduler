@@ -32,3 +32,5 @@ print(f"Final hash: {final_hash}")
 
 output = {"status": "workflow_complete", "final_hash": final_hash}
 print(f"__TS_OUTPUT__={json.dumps(output)}")
+metrics = {"output_bytes_by_field": {}, "transfer_seconds": 0.0}
+print(f"__TS_METRICS__={json.dumps(metrics)}")

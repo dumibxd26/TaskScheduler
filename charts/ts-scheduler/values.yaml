@@ -14,7 +14,8 @@ scheduler:
     repository: ts-control-plane
     tag: v1
     pullPolicy: IfNotPresent
-  policy: adaptive          # adaptive | legacy
+  # legacy is a compatibility alias for legacy-v1.
+  policy: adaptive          # adaptive | legacy-v1 | legacy-tuned | legacy
   tickIntervalS: 1.0
   profilePath: /data/profiles_learned.json
   profileConfigMap: ts-scheduler-profiles

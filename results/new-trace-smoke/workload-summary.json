@@ -1,0 +1,56 @@
+{
+  "case_count": 4,
+  "ranking": [
+    {
+      "cases": 4,
+      "deadline_hit_rate": 1.0,
+      "mean_preemptions": 0.0,
+      "median_energy_j": 3377.2628394499034,
+      "median_makespan_s": 55.761224401679584,
+      "median_response_regret": 6.923640346667703e-05,
+      "p95_response_regret": 0.00046780855426042933,
+      "policy": "heft"
+    },
+    {
+      "cases": 4,
+      "deadline_hit_rate": 1.0,
+      "mean_preemptions": 0.0,
+      "median_energy_j": 3377.2628394499034,
+      "median_makespan_s": 55.761224401679584,
+      "median_response_regret": 0.0003031406805968917,
+      "p95_response_regret": 0.028881796673302595,
+      "policy": "eft"
+    },
+    {
+      "cases": 4,
+      "deadline_hit_rate": 1.0,
+      "mean_preemptions": 0.0,
+      "median_energy_j": 4105.013128666131,
+      "median_makespan_s": 74.8788728378234,
+      "median_response_regret": 0.0009599624035824261,
+      "p95_response_regret": 0.3854353232752281,
+      "policy": "adaptive"
+    },
+    {
+      "cases": 4,
+      "deadline_hit_rate": 1.0,
+      "mean_preemptions": 0.0,
+      "median_energy_j": 4105.013128666131,
+      "median_makespan_s": 74.8788728378234,
+      "median_response_regret": 0.0009599624035824261,
+      "p95_response_regret": 0.3854353232752281,
+      "policy": "adaptive-no-preempt"
+    },
+    {
+      "cases": 4,
+      "deadline_hit_rate": 1.0,
+      "mean_preemptions": 0.0,
+      "median_energy_j": 4587.583345917967,
+      "median_makespan_s": 75.33268280607845,
+      "median_response_regret": 0.5959185210146511,
+      "p95_response_regret": 2.523247130456901,
+      "policy": "fcfs"
+    }
+  ],
+  "record_count": 20
+}

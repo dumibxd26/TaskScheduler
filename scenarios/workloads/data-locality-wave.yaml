@@ -1,0 +1,25 @@
+schema_version: 1
+workload:
+  id: data-locality-wave
+  description: Overlapping pipelines stress producer locality, cache warmth, storage, and network contention.
+  submissions:
+    - id: pipeline
+      workflow_file: ../workflows/data-heavy-pipeline.yaml
+      arrival_s: 0
+      count: 2
+      interval_s: 5
+      priority: BATCH
+    - id: cache
+      workflow_file: ../workflows/cache-sensitive.yaml
+      arrival_s: 1
+      count: 2
+      interval_s: 7
+      priority: REAL_TIME_MEDIUM
+    - id: storage
+      workflow_file: ../workflows/io-heavy-6.yaml
+      arrival_s: 3
+      priority: BATCH
+    - id: fanout
+      workflow_file: ../workflows/fanout-1to8.yaml
+      arrival_s: 6
+      priority: REAL_TIME_MEDIUM

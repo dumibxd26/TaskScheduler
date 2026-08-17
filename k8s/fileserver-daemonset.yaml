@@ -30,6 +30,17 @@ spec:
       hostNetwork: true
       tolerations:
         - operator: Exists
+      initContainers:
+        - name: seed-probe
+          image: ts-fileserver:v1
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - test -f /srv/data/_probe.bin || cp /opt/ts-probe.bin /srv/data/_probe.bin
+          volumeMounts:
+            - name: data
+              mountPath: /srv/data
       containers:
         - name: nginx
           image: ts-fileserver:v1

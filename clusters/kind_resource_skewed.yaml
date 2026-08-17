@@ -1,0 +1,50 @@
+# Single-host validation topology approximating an asymmetric heterogeneous
+# simulator family. Total resources stay close to the small profile, but the
+# CPU, memory, and IO capability ratios are deliberately more pronounced.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: ts-cluster
+nodes:
+  - role: control-plane
+
+  - role: worker
+    labels:
+      node-type: CPU_OPT
+      ts.capacity/cpu: "2.5"
+      ts.capacity/memory: "1280"
+      ts.capacity/io: "100"
+      ts.io/cooling-class: HIGH
+      ts.io/thermal-throttle-c: "105"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-cpu-fast
+
+  - role: worker
+    labels:
+      node-type: MEM_OPT
+      ts.capacity/cpu: "0.75"
+      ts.capacity/memory: "1792"
+      ts.capacity/io: "100"
+      ts.io/cooling-class: STANDARD
+      ts.io/thermal-throttle-c: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-mem-large
+
+  - role: worker
+    labels:
+      node-type: IO_OPT
+      ts.capacity/cpu: "0.75"
+      ts.capacity/memory: "768"
+      ts.capacity/io: "1500"
+      ts.io/cooling-class: PASSIVE
+      ts.io/thermal-throttle-c: "95"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-io-fast

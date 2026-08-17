@@ -1,5 +1,5 @@
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 from services.queue_manager import QueueManager
 from services.workflow_manager import ReadinessResolver
@@ -16,7 +16,8 @@ class SchedulerEngine:
     def __init__(self, queue_manager: QueueManager, resolver: ReadinessResolver,
                  runner: WorkflowSchedulerRunner, templates: dict,
                  policy: Optional[Policy] = None,
-                 data_placement: Optional[DataPlacement] = None):
+                 data_placement: Optional[DataPlacement] = None,
+                 preempt_task: Optional[Callable[[str], bool]] = None):
         self.queue = queue_manager
         self.resolver = resolver
         self.runner = runner
@@ -27,6 +28,7 @@ class SchedulerEngine:
         # Existing callers that pass only the original four arguments keep
         # working unchanged.
         self.policy: Policy = policy or build_policy(runner=runner)
+        self.preempt_task = preempt_task
 
     def run_tick(self, cluster_scenario):
         """
@@ -94,6 +96,39 @@ class SchedulerEngine:
         # either do the same or have the engine register tasks here from the
         # PlaceAction list. We keep both paths robust by using the entry map.
         entry_by_id = {e.task.task_instance_id: e for e in sorted_tasks}
+        for preempt in actions.preempt:
+            victim = None
+            victim_node = None
+            for workflow in self.queue.admitted_workflows.values():
+                candidate = workflow.task_instances.get(
+                    preempt.victim_task_instance_id)
+                if candidate is not None:
+                    victim = candidate
+                    victim_node = candidate.assigned_node_id
+                    break
+            if victim is None or victim_node is None:
+                continue
+            if self.preempt_task is not None and not self.preempt_task(
+                    victim.task_instance_id):
+                continue
+            node = next(
+                (item for item in cluster_scenario.nodes
+                 if item.node_id == victim_node),
+                None,
+            )
+            if node is not None:
+                node.unregister_task(victim.task_instance_id)
+            victim.state = TaskState.WAITING
+            victim.assigned_node_id = None
+            victim.start_time = None
+            victim.finish_time = None
+            victim.preemption_count += 1
+            record_preemption = getattr(self.policy, "record_preemption", None)
+            if callable(record_preemption):
+                record_preemption(victim_node, victim.task_instance_id, state.now)
+            print(f"[PREEMPT] '{victim.task_instance_id}' from {victim_node} "
+                  f"({preempt.mode})")
+
         dispatched = set()
         for place in actions.place:
             entry = entry_by_id.get(place.task_instance_id)

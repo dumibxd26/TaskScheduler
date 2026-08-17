@@ -1,4 +1,10 @@
 
+> **Document status (2026-08-17): historical brainstorming notes.** Ideas in
+> this file are not implementation or evaluation claims. Current status and
+> retained evidence are documented in [README.md](README.md),
+> [ENGINEERING_JOURNAL.md](ENGINEERING_JOURNAL.md), and
+> [thesis/thesis.tex](thesis/thesis.tex).
+
 
 - Realised it is stupid to choose best node for a task, it is obvious that one task will run faster on a computer that is better anytime.
 

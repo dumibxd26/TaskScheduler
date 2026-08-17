@@ -12,7 +12,13 @@ class ExecutionObserver:
                                actual_startup: float, node_id: str = None,
                                node_type: NodeType = None,
                                node_cpu_at_start: float = 0.0,
-                               node_memory_at_start: float = 0.0):
+                               node_memory_at_start: float = 0.0,
+                               temperature_at_start: float = None,
+                               temperature_at_end: float = None,
+                               io_bytes_read: int = 0,
+                               io_bytes_written: int = 0,
+                               output_bytes_by_field: dict = None,
+                               transfer_seconds: float = 0.0):
         """
         Called when a pod finishes successfully.
         - Marks the task FINISHED and stamps finish_time.
@@ -34,6 +40,12 @@ class ExecutionObserver:
                 actual_startup=actual_startup,
                 node_cpu_at_start=node_cpu_at_start,
                 node_memory_at_start=node_memory_at_start,
+                temperature_at_start=temperature_at_start,
+                temperature_at_end=temperature_at_end,
+                io_bytes_read=io_bytes_read,
+                io_bytes_written=io_bytes_written,
+                output_bytes_by_field=output_bytes_by_field,
+                transfer_seconds=transfer_seconds,
             )
             profile = self.profile_store.get_profile(task.task_template_id)
             if profile and profile.preferred_node_order:

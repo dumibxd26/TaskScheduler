@@ -1,0 +1,50 @@
+schema_version: 1
+cluster:
+  id: unreliable-thermal-3
+  family: unreliable-thermal
+  description: A fast hot node, reliable balanced node, and failure-prone edge node.
+  calibration:
+    status: synthetic
+    source: Thermal-throttling and recovery stress scenario.
+    uncertainty_fraction: 0
+  registry_endpoint: registry
+  network_vertices: [switch]
+  nodes:
+    - id: hot-fast
+      type: CPU_OPT
+      cooling_class: PASSIVE
+      background_cpu_fraction: 0.02
+      background_memory_mib: 512
+      failure_schedule_s: [20, 75]
+      mean_repair_s: 8
+      cpu: {architecture: amd64, microarchitecture: synthetic-hot, physical_cores: 8, threads_per_core: 2, base_frequency_ghz: 3.4, max_frequency_ghz: 5.0, calibrated_gflops_per_core: 24, l3_cache_mib: 24, idle_power_w: 20, max_power_w: 145, smt_efficiency: 0.34, vector_extensions: [AVX2]}
+      memory: {capacity_mib: 16384, calibrated_bandwidth_mib_s: 30000, latency_ns: 70, channels: 2}
+      storage: {capacity_mib: 512000, sequential_read_mib_s: 2200, sequential_write_mib_s: 1700, random_read_iops: 200000, random_write_iops: 150000}
+      thermal: {ambient_c: 28, initial_c: 58, throttle_c: 72, shutdown_c: 90, thermal_resistance_c_per_w: 1.25, thermal_capacitance_j_per_c: 35, minimum_throttle_factor: 0.32}
+    - id: reliable
+      type: GENERAL
+      cooling_class: HIGH
+      background_cpu_fraction: 0.03
+      background_memory_mib: 768
+      failure_rate_per_hour: 0.02
+      mean_repair_s: 5
+      cpu: {architecture: amd64, microarchitecture: synthetic-reliable, physical_cores: 6, threads_per_core: 2, base_frequency_ghz: 2.8, max_frequency_ghz: 3.8, calibrated_gflops_per_core: 14, l3_cache_mib: 24, idle_power_w: 14, max_power_w: 85, smt_efficiency: 0.3}
+      memory: {capacity_mib: 32768, calibrated_bandwidth_mib_s: 42000, latency_ns: 68, channels: 4}
+      storage: {capacity_mib: 1024000, sequential_read_mib_s: 3500, sequential_write_mib_s: 2800, random_read_iops: 350000, random_write_iops: 260000}
+      thermal: {ambient_c: 21, initial_c: 31, throttle_c: 88, shutdown_c: 100, thermal_resistance_c_per_w: 0.38, thermal_capacitance_j_per_c: 180, minimum_throttle_factor: 0.72}
+    - id: flaky-edge
+      type: IO_OPT
+      cooling_class: STANDARD
+      background_cpu_fraction: 0.05
+      background_memory_mib: 384
+      failure_rate_per_hour: 8
+      mean_repair_s: 12
+      cpu: {architecture: arm64, microarchitecture: synthetic-flaky, physical_cores: 4, threads_per_core: 1, base_frequency_ghz: 2.0, max_frequency_ghz: 2.6, calibrated_gflops_per_core: 7, l3_cache_mib: 6, idle_power_w: 4, max_power_w: 26, smt_efficiency: 0}
+      memory: {capacity_mib: 8192, calibrated_bandwidth_mib_s: 14000, latency_ns: 98, channels: 2}
+      storage: {capacity_mib: 256000, sequential_read_mib_s: 1600, sequential_write_mib_s: 1100, random_read_iops: 140000, random_write_iops: 90000}
+      thermal: {ambient_c: 25, initial_c: 40, throttle_c: 80, shutdown_c: 90, thermal_resistance_c_per_w: 1.45, thermal_capacitance_j_per_c: 60, minimum_throttle_factor: 0.45}
+  links:
+    - {id: hot-link, endpoints: [hot-fast, switch], bandwidth_mib_s: 238, latency_ms: 0.2}
+    - {id: reliable-link, endpoints: [reliable, switch], bandwidth_mib_s: 238, latency_ms: 0.2}
+    - {id: flaky-link, endpoints: [flaky-edge, switch], bandwidth_mib_s: 55, latency_ms: 4, jitter_ms: 1.5, packet_loss_rate: 0.004, medium: wifi}
+    - {id: registry-link, endpoints: [registry, switch], bandwidth_mib_s: 476, latency_ms: 0.2}

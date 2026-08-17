@@ -1,0 +1,23 @@
+schema_version: 1
+workload:
+  id: recovery-gang-mix
+  description: Checkpointable batch work and a gang overlap before a non-preemptable critical arrival.
+  submissions:
+    - id: recovery
+      workflow_file: ../workflows/checkpoint-long.yaml
+      arrival_s: 0
+      count: 2
+      interval_s: 3
+      priority: BATCH
+      preemptable: true
+    - id: gang
+      workflow_file: ../workflows/gang-4.yaml
+      arrival_s: 1
+      priority: REAL_TIME_MEDIUM
+      preemptable: true
+    - id: urgent
+      workflow_file: ../workflows/critical-deadline.yaml
+      arrival_s: 4
+      priority: CRITICAL
+      preemptable: false
+      deadline_s: 12

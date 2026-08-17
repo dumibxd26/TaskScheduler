@@ -23,10 +23,13 @@ Usage:
     cluster = poll_cluster_state()
 """
 from kubernetes import client, config
-from models.enums import NodeType
+from models.enums import CoolingClass, NodeType
 from models.cluster import Node, ClusterScenario
 
 _NODE_TYPE_MAP = {e.name: e for e in NodeType}
+_COOLING_CLASS_MAP = {e.name: e for e in CoolingClass}
+_BANDWIDTH_FROM_PREFIX = "ts.io/bw-from-"
+_BANDWIDTH_TO_PREFIX = "ts.io/bw-to-"
 
 _v1: client.CoreV1Api | None = None
 _custom: client.CustomObjectsApi | None = None
@@ -156,6 +159,7 @@ def poll_cluster_state(preserve_warm: ClusterScenario | None = None) -> ClusterS
 
     for n in k8s_nodes:
         labels = n.metadata.labels or {}
+        annotations = n.metadata.annotations or {}
         nt_str = labels.get("node-type")
         if nt_str is None:
             continue
@@ -167,6 +171,43 @@ def poll_cluster_state(preserve_warm: ClusterScenario | None = None) -> ClusterS
         alloc = n.status.allocatable or {}
         alloc_cpu = _parse_cpu(alloc.get("cpu", str(total_cpu)))
         alloc_mem = _parse_memory_mi(alloc.get("memory", f"{int(total_mem)}Mi"))
+
+        cooling_label = labels.get(
+            "ts.io/cooling-class", labels.get("ts.cooling-class", "STANDARD"))
+        cooling_class = _COOLING_CLASS_MAP.get(
+            cooling_label.upper(),
+            CoolingClass.STANDARD,
+        )
+        try:
+            throttle_temp_c = float(
+                labels.get(
+                    "ts.io/thermal-throttle-c",
+                    labels.get("ts.thermal-throttle-temp-c", "100"),
+                ))
+        except (TypeError, ValueError):
+            throttle_temp_c = 100.0
+        try:
+            cpu_temperature = float(annotations["ts.io/cpu-temp-c"])
+        except (KeyError, TypeError, ValueError):
+            cpu_temperature = None
+
+        bandwidth_from: dict[str, float] = {}
+        bandwidth_to: dict[str, float] = {}
+        for key, raw_mib_s in annotations.items():
+            if key.startswith(_BANDWIDTH_FROM_PREFIX):
+                peer = key[len(_BANDWIDTH_FROM_PREFIX):]
+                target = bandwidth_from
+            elif key.startswith(_BANDWIDTH_TO_PREFIX):
+                peer = key[len(_BANDWIDTH_TO_PREFIX):]
+                target = bandwidth_to
+            else:
+                continue
+            try:
+                mib_s = float(raw_mib_s)
+            except (TypeError, ValueError):
+                continue
+            if peer and mib_s > 0:
+                target[peer] = mib_s * 1024 * 1024
 
         # Read cached container images directly from the node status
         cached_images: set[str] = set()
@@ -183,6 +224,11 @@ def poll_cluster_state(preserve_warm: ClusterScenario | None = None) -> ClusterS
             "alloc_cpu": alloc_cpu,
             "alloc_mem": alloc_mem,
             "cached_images": cached_images,
+            "cooling_class": cooling_class,
+            "throttle_temp_c": throttle_temp_c,
+            "cpu_temperature": cpu_temperature,
+            "bandwidth_from": bandwidth_from,
+            "bandwidth_to": bandwidth_to,
         }
 
     # --- Step 2: Get actual usage (prefer metrics-server, fall back to pod requests) ---
@@ -202,8 +248,10 @@ def poll_cluster_state(preserve_warm: ClusterScenario | None = None) -> ClusterS
     nodes = []
     for name, info in node_info.items():
         used_cpu, used_mem = usage_by_node.get(name, (0.0, 0.0))
-        free_cpu = max(0.0, info["alloc_cpu"] - used_cpu)
-        free_mem = max(0.0, info["alloc_mem"] - used_mem)
+        available_cpu = min(info["alloc_cpu"], info["total_cpu"])
+        available_mem = min(info["alloc_mem"], info["total_memory"])
+        free_cpu = max(0.0, available_cpu - used_cpu)
+        free_mem = max(0.0, available_mem - used_mem)
 
         node = Node(
             node_id=name,
@@ -213,6 +261,9 @@ def poll_cluster_state(preserve_warm: ClusterScenario | None = None) -> ClusterS
             free_cpu=free_cpu,
             free_memory=free_mem,
             warm_images=info["cached_images"],
+            cooling_class=info["cooling_class"],
+            thermal_throttle_temp_c=info["throttle_temp_c"],
+            cpu_temperature=info["cpu_temperature"],
         )
 
         # Carry over active_tasks from previous poll if available
@@ -229,7 +280,21 @@ def poll_cluster_state(preserve_warm: ClusterScenario | None = None) -> ClusterS
               f"cpu={nd.free_cpu:.2f}/{nd.total_cpu:.1f} (used={used_c:.2f})  "
               f"mem={nd.free_memory:.0f}/{nd.total_memory:.0f} MiB (used={used_m:.0f})")
 
+    bandwidth_matrix = {
+        (source, destination): bytes_per_s
+        for source, info in node_info.items()
+        for destination, bytes_per_s in info["bandwidth_to"].items()
+        if destination in node_info
+    }
+    bandwidth_matrix.update({
+        (source, destination): bytes_per_s
+        for destination, info in node_info.items()
+        for source, bytes_per_s in info["bandwidth_from"].items()
+        if source in node_info
+    })
+
     return ClusterScenario(
         scenario_id="live-k8s", name="Live Cluster",
         description="Polled from K8s API", nodes=nodes,
+        bandwidth_matrix=bandwidth_matrix,
     )

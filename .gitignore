@@ -75,6 +75,13 @@ instance/
 # Sphinx documentation
 docs/_build/
 
+# LaTeX build intermediates
+thesis/*.aux
+thesis/*.fdb_latexmk
+thesis/*.fls
+thesis/*.out
+thesis/*.toc
+
 # PyBuilder
 .pybuilder/
 target/

@@ -149,7 +149,8 @@ class LegacyEightFactorPolicy(Policy):
             # Delegate the actual node choice to the existing runner. It also
             # registers the task on the chosen node (capacity decrement).
             chosen = self.runner.schedule_task(
-                entry.task, task_template, state.cluster)
+                entry.task, task_template, state.cluster,
+                parent_node_ids=entry.task.parent_node_ids)
 
             actions.place.append(PlaceAction(
                 task_instance_id=entry.task.task_instance_id,
@@ -198,6 +199,10 @@ class AdaptivePolicy(Policy):
 
     def name(self) -> str:
         return "AdaptivePolicy"
+
+    def record_preemption(self, node_id: str, task_id: str, now: float):
+        if self._preemption is not None:
+            self._preemption.record_preemption(node_id, task_id, now)
 
     def decide(self, state: SchedulerState) -> ActionSet:
         import random
@@ -276,21 +281,26 @@ class AdaptivePolicy(Policy):
             if not feasible:
                 return False
 
-            # Profile exploration: if (task, node) is cold, explore randomly
-            # with probability _EXPLORATION_RATE.
-            explore = False
+            # Force coverage before exploitation so cold starts cannot lock a
+            # task template onto the first node returned by the API.
             profile = store.get_profile(entry.task_template_id)
-            if profile:
-                for n in feasible:
-                    m = profile.metrics_by_node.get(n.node_id)
-                    if m and m.is_drifting():
-                        explore = True
-                        break
-                if profile.exploration_level < 1.0:
-                    explore = True
+            observations = profile.metrics_by_node if profile else {}
+            sample_counts = {
+                node.node_id: observations[node.node_id].count
+                if node.node_id in observations else 0
+                for node in feasible
+            }
+            minimum_samples = min(sample_counts.values())
+            underexplored = [
+                node for node in feasible
+                if sample_counts[node.node_id] == minimum_samples
+                and minimum_samples < 3
+            ]
+            explore = bool(underexplored)
 
-            if explore and random.random() < _EXPLORATION_RATE:
-                chosen = random.choice(feasible)
+            if underexplored:
+                chosen = min(underexplored, key=lambda node: node.node_id)
+                best_score = 0.0
             else:
                 # Score each node by ECT (lower = better) + UCB.
                 best_node = feasible[0]
@@ -312,7 +322,10 @@ class AdaptivePolicy(Policy):
                     ucb = store.get_ucb_score(
                         entry.task_template_id, n.node_id, beta=_UCB_BETA)
                     if ucb is not None:
-                        ect = min(ect, ucb)
+                        expected_cost = store.get_expected_runtime(
+                            entry.task_template_id, n.node_id)
+                        if expected_cost is not None:
+                            ect += min(0.0, ucb - expected_cost)
 
                     # Failure penalty (J(A) risk term).
                     fail_rate = store.get_failure_rate(
@@ -437,9 +450,13 @@ def build_policy(name: Optional[str] = None, *,
     Phase 0 ships ``legacy``; Phase 3+ adds ``adaptive``.
     """
     selected = (name or os.environ.get(POLICY_ENV_VAR) or DEFAULT_POLICY).lower()
-    if selected in ("legacy", "legacy_eight_factor", "eight_factor"):
+    if selected in (
+            "legacy", "legacy-v1", "legacy-tuned",
+            "legacy_eight_factor", "eight_factor"):
         if runner is None:
             raise ValueError("LegacyEightFactorPolicy requires runner=")
+        from services.scheduler import legacy_weights_for_policy
+        runner.algorithm.weights = legacy_weights_for_policy(selected)
         return LegacyEightFactorPolicy(runner=runner)
     if selected in ("adaptive", "adaptive_ect", "ect"):
         # Default-construct the planners when none were supplied so the
@@ -455,4 +472,5 @@ def build_policy(name: Optional[str] = None, *,
             defrag_planner=defrag_planner,
         )
     raise ValueError(
-        f"Unknown policy '{selected}'. Available: 'legacy', 'adaptive'.")
+        f"Unknown policy '{selected}'. Available: 'legacy-v1', "
+        "'legacy-tuned', 'adaptive'.")

@@ -21,9 +21,6 @@ name: ts-cluster
 nodes:
   # The Control Plane (Kubernetes Brain)
   - role: control-plane
-    extraMounts:
-      - hostPath: /tmp/ts-profiles
-        containerPath: /profiles
 
   # ── CPU-Optimised node (2 CPUs, 1 GB RAM) ──
   - role: worker
@@ -32,18 +29,13 @@ nodes:
       ts.capacity/cpu: "2.0"
       ts.capacity/memory: "1024"
       ts.capacity/io: "100"
-      ts.cooling-class: STANDARD
-      ts.thermal-throttle-temp-c: "100"
+      ts.io/cooling-class: STANDARD
+      ts.io/thermal-throttle-c: "100"
     kubeadmConfigPatches:
       - |
         kind: JoinConfiguration
         nodeRegistration:
           name: ts-node-cpu-1
-    extraMounts:
-      - hostPath: /tmp/ts-data-cpu-1
-        containerPath: /var/lib/ts-data
-      - hostPath: /tmp/ts-profiles
-        containerPath: /profiles
 
   # ── Memory-Optimised node (1 CPU, 1.5 GB RAM) ──
   - role: worker
@@ -52,18 +44,13 @@ nodes:
       ts.capacity/cpu: "1.0"
       ts.capacity/memory: "1536"
       ts.capacity/io: "100"
-      ts.cooling-class: STANDARD
-      ts.thermal-throttle-temp-c: "100"
+      ts.io/cooling-class: STANDARD
+      ts.io/thermal-throttle-c: "100"
     kubeadmConfigPatches:
       - |
         kind: JoinConfiguration
         nodeRegistration:
           name: ts-node-mem-1
-    extraMounts:
-      - hostPath: /tmp/ts-data-mem-1
-        containerPath: /var/lib/ts-data
-      - hostPath: /tmp/ts-profiles
-        containerPath: /profiles
 
   # ── IO-Optimised node (1 CPU, 768 MB RAM) ──
   - role: worker
@@ -72,15 +59,10 @@ nodes:
       ts.capacity/cpu: "1.0"
       ts.capacity/memory: "768"
       ts.capacity/io: "1000"
-      ts.cooling-class: STANDARD
-      ts.thermal-throttle-temp-c: "100"
+      ts.io/cooling-class: STANDARD
+      ts.io/thermal-throttle-c: "100"
     kubeadmConfigPatches:
       - |
         kind: JoinConfiguration
         nodeRegistration:
           name: ts-node-io-1
-    extraMounts:
-      - hostPath: /tmp/ts-data-io-1
-        containerPath: /var/lib/ts-data
-      - hostPath: /tmp/ts-profiles
-        containerPath: /profiles

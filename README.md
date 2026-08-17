@@ -1,38 +1,30 @@
-<div align="center">
+# TaskScheduler
 
-# Task Scheduler
+TaskScheduler is an experiment lab and Kubernetes control plane for scheduling
+directed acyclic graph (DAG) workflows on heterogeneous clusters. It combines a
+deterministic discrete-event simulator with a deployable Workflow controller
+and custom scheduler.
 
-### Adaptive DAG-Aware Workflow Scheduler for Heterogeneous Kubernetes Clusters
+> **Evidence status:** exploratory simulation, fresh-seed confirmation,
+> Legacy weight search, factor studies, and a six-trial Legacy/Adaptive Kind
+> pilot are complete. The final three-policy, three-topology same-host Kind
+> matrix also completed and passed strict analysis with 27 trials, 135
+> workflows, and 540 successful final tasks. Physical multi-machine k3s
+> validation is still pending. The
+> simulator and live scheduler are separate implementations over partly shared
+> models; they do not run identical policy code.
 
-*Master's Thesis — University Politehnica of Bucharest*
-*"Task Scheduling in Distributed Systems"*
-
----
-
-**Learning-based** · **DAG-aware** · **Priority-driven** · **Heterogeneous hardware**
-
-</div>
-
----
-
-## Table of Contents
+## Contents
 
 - [Overview](#overview)
 - [Architecture](#architecture)
-- [Scheduling Algorithm](#scheduling-algorithm)
-- [Exploration & Learning](#exploration--learning)
+- [Policies](#policies)
+- [Learning and Locality](#learning-and-locality)
+- [Evidence](#evidence)
 - [Project Structure](#project-structure)
 - [Prerequisites](#prerequisites)
-- [Quick Start — Local Simulation](#quick-start--local-simulation)
+- [Simulation Lab](#simulation-lab)
 - [Kubernetes Deployment](#kubernetes-deployment)
-  - [1. Create the Kind Cluster](#1-create-the-kind-cluster)
-  - [2. Enforce Physical Resource Limits](#2-enforce-physical-resource-limits)
-  - [3. Install Metrics Server](#3-install-metrics-server)
-  - [4. Build & Load Container Images](#4-build--load-container-images)
-  - [5. Deploy the Scheduler](#5-deploy-the-scheduler)
-  - [6. Verify Labels & Nodes](#6-verify-labels--nodes)
-  - [7. Submit a Workflow](#7-submit-a-workflow)
-  - [8. Run from Local Machine (Development)](#8-run-from-local-machine-development)
 - [Monitoring & Debugging](#monitoring--debugging)
 - [Testing](#testing)
 - [Cleanup](#cleanup)
@@ -41,134 +33,137 @@
 
 ## Overview
 
-The native Kubernetes `kube-scheduler` is a **stateless, per-Pod load balancer**. It evaluates workloads in isolation — blind to workflow dependencies, historical performance, and the topology of heterogeneous hardware.
+The project answers two related questions:
 
-This project replaces it with a **custom Predictive Control Plane** that:
+1. How do FCFS, Random, EFT, HEFT, three distinct Legacy variants, and
+  Adaptive policies behave across heterogeneous DAG and overlapping-arrival
+  scenarios?
+2. Can the intended lifecycle, learning, locality, telemetry, binding, and
+  kill/restart preemption paths execute through a real Kubernetes API?
 
-- Orchestrates **DAG-based workflows** (multi-step pipelines with dependencies)
-- Places tasks on nodes **optimized for their workload class** (CPU, memory, IO)
-- **Learns from every execution** — building per-task, per-node runtime profiles
-- **Explores intelligently** — guaranteeing full coverage of all nodes before exploiting learned preferences
-- Enforces **priority queuing** with aging, preemption support, and CRITICAL overrides
-- Tracks **real cluster resources** via the Kubernetes Metrics API
+The simulator provides controlled policy comparison. The live system provides
+end-to-end integration evidence and descriptive same-host timing. Kind worker
+containers share one physical machine, so the live results are not evidence of
+independent network, thermal, or failure domains.
 
-### The Pipeline
+The current evidence supports policy selection by objective:
 
-```
-┌──────────┐     ┌──────────┐     ┌──────────┐
-│  task-io  │────▶│ task-mem  │────▶│ task-cpu  │
-│ (IO_BOUND)│     │(MEM_BOUND)│     │(CPU_BOUND)│
-└──────────┘     └──────────┘     └──────────┘
-   writes          allocates         computes
-   50 MB file      200 MB array      2M SHA-256
-```
-
-Data flows between tasks via **log-based metadata extraction** (`__TS_OUTPUT__=<json>`) — no shared filesystems required.
+| Objective | Current recommendation |
+|---|---|
+| Static, known DAG | HEFT; EFT is a close simpler baseline |
+| Energy-sensitive overlap | EFT or HEFT |
+| Deadline hit rate in the simulator model | Historical simulator Legacy |
+| Exact live Legacy or batch completion required | Tuned Legacy rather than Legacy v1 |
+| Median regular-workflow response | Adaptive, when restart cost is acceptable |
+| Restart cost dominates | Adaptive no-preempt in simulation; live validation remains future work |
 
 ---
 
 ## Architecture
 
-```
-                 ┌─────────────────────────────────────────────┐
-                 │               Entry Points                  │
-                 │                                             │
-                 │  run_simulation.py    (local, no K8s)       │
-                 │  k8s_main.py         (direct pod creation)  │
-                 │  k8s_scheduler.py    (K8s Deployment)       │
-                 │  server.py           (Flask REST API)       │
-                 └─────────────┬───────────────────────────────┘
-                               │
-                               ▼
-                 ┌─────────────────────────────────┐
-                 │     engine.py (SchedulerEngine)  │
-                 │         run_tick() loop          │
-                 └──┬──────┬──────┬────────┬───────┘
-                    │      │      │        │
-          ┌─────────┘      │      │        └──────────┐
-          ▼                ▼      ▼                    ▼
-   ┌─────────────┐  ┌──────────┐  ┌──────────────┐  ┌───────────┐
-   │QueueManager │  │Workflow  │  │  Scheduler   │  │ Observer  │
-   │ admission   │  │Manager   │  │  (scoring +  │  │ (records  │
-   │ heap + task │  │(DAG +    │  │  placement)  │  │ outcomes) │
-   │ priority Q  │  │failures) │  │              │  │           │
-   └─────────────┘  └──────────┘  └──────┬───────┘  └─────┬─────┘
-                                         │                 │
-                                         ▼                 ▼
-                               ┌───────────────────────────────┐
-                               │        ProfileStore           │
-                               │  (per-task, per-node learning │
-                               │   rolling window of 20 obs.)  │
-                               └───────────────────────────────┘
+```mermaid
+flowchart TB
+  subgraph Simulation
+    Scenarios[Cluster, workflow, and workload YAML]
+    Lab[run_experiment_lab.py]
+    Engine[Discrete-event engine]
+    SimPolicies[Nine simulator policies]
+    Scenarios --> Lab --> Engine --> SimPolicies
+  end
+
+  subgraph Kubernetes
+    CRDs[Workflow and TaskTemplate CRDs]
+    Controller[ts-controller: DAG lifecycle]
+    Scheduler[ts-scheduler: placement and learning]
+    Pods[Task Pods]
+    Agents[Fileserver, bandwidth, thermal DaemonSets]
+    CRDs --> Controller --> Pods
+    Pods --> Scheduler
+    Scheduler -->|bind / delete victims| Pods
+    Agents -->|data and Node annotations| Scheduler
+  end
 ```
 
-| Mode | Entry Point | Description |
-|------|-------------|-------------|
-| **Simulation** | `run_simulation.py` | No K8s. Fake runtimes. 6 nodes, 10 workflows in 3 bursts. |
-| **K8s Orchestrator** | `k8s_main.py` | Creates pods directly via API. Blocks per-task. Sequential DAG walk. |
-| **K8s Custom Scheduler** | `k8s_scheduler.py` | Deploys as a K8s Deployment. Watches Pending pods, binds to chosen nodes. |
-| **REST Server** | `server.py` | Flask API with `--simulate` mode. Background tick loop every 1s. |
+The controller creates a Pod only after its dependencies finish. The live
+scheduler watches Pending Pods with `schedulerName: ts-scheduler`, invokes the
+selected policy, applies victim deletions, and binds placements. The controller
+then records outputs, retries interrupted tasks, and recursively terminates
+descendants blocked by failed parents.
+
+The controller knows the complete Workflow DAG. The current scheduler adapter
+receives only the ready-Pod frontier and reconstructs no future edges, so the
+live experiment does **not** validate full HEFT upward-rank ordering.
 
 ---
 
-## Scheduling Algorithm
+## Policies
 
-### 8-Factor Scoring Model
+### Simulator
 
-Every candidate node is scored across **8 weighted factors**:
+| Policy | Ordering and placement |
+|---|---|
+| FCFS | Ready-list order and first feasible placement |
+| Random | Seeded random feasible placement |
+| EFT | Greedy minimum estimated finish time |
+| HEFT | Full-DAG upward rank, then EFT placement |
+| Legacy | Historical simulator heuristic: EFT plus specialization and fragmentation terms |
+| Legacy v1 | Exact live eight-factor scorer with the original weights |
+| Legacy tuned | Exact live scorer with train/validation/holdout-selected weights |
+| Adaptive | Priority + HEFT order; finish, energy, transfer, thermal, and failure score; priority preemption |
+| Adaptive no-preempt | Exact Adaptive score and order with preemption disabled |
 
-| Factor | Weight | Description |
-|--------|-------:|-------------|
-| **Type Affinity** | +30 | Learned preference — which node *type* runs this task fastest |
-| **Node Availability** | +25 | How soon current tasks on this node will finish |
-| **Resource Fit** | +20 | CPU/memory headroom + core-scaling bonus |
-| **Warm Image** | +10 | Container image already cached from a previous run |
-| **Load Balance** | +10 | Fewer running tasks → less contention |
-| **Data Locality** | +5 | Prefer the node where the parent task ran |
-| **Failure Penalty** | −10 | Historical failure rate on this node |
-| **Memory Pressure** | −15 | Sharp penalty when free memory drops below 15% |
+The simulator models shared CPU, cache, memory bandwidth, storage, routed
+network capacity, thermal throttling, power, failures/repair, checkpoints,
+gangs, releases, and functional priority preemption.
 
-### Score Computation
+### Kubernetes
 
-```
-Final Score = Σ (factor_score × weight)
-```
+`TS_POLICY=legacy` is a backward-compatible alias for `legacy-v1`; the static
+Kustomize deployment currently selects `adaptive`. Both Legacy names use the
+original exact eight-factor score: type affinity,
+resource fit, warm image, load, availability, failure history, parent locality,
+and memory pressure. `TS_POLICY=legacy-tuned` changes only those eight weights;
+coverage, random exploration, profile learning, and tie-breaking are unchanged.
 
-- **Type Affinity**: Rank-based from `preferred_node_order` (sorted by median total cost). Unknown types get 50%.
-- **Resource Fit**: 35% CPU fit + 35% memory fit + 30% core-scaling bonus.
-- **Availability**: Decays linearly over 30s based on `estimated_free_in` (soonest task ETA).
-- **Load Balance**: `(1 − running_tasks / max_concurrent)` where `max_concurrent = max(total_cpu × 2, 4)`.
-- **Memory Pressure**: Linear penalty when `free_memory / total_memory < 0.15`.
+`TS_POLICY=adaptive` orders the ready frontier by priority, virtual runtime,
+arrival, and stored rank. It minimizes occupancy-aware expected finish time,
+an optimistic UCB adjustment, observed failure cost, and a thermal-headroom
+penalty. It supports atomic gang rollback and bounded kill/restart preemption.
 
 ---
 
-## Exploration & Learning
+## Learning and Locality
 
-### Three-Phase Exploration Strategy
+Successful live Pods update per-task-template, per-node startup and runtime
+profiles. Profiles are persisted to a file and ConfigMap and survive scheduler
+Pod replacement.
 
-The scheduler avoids premature exploitation through a phased approach:
+- Legacy samples every candidate, gathers at least three observations per node,
+  then retains a 10% random exploration branch.
+- Adaptive forces the least-observed feasible candidates to three samples,
+  then uses an optimistic UCB cost adjustment during exploitation.
+- Cold pairs use 2 s startup and 10 s runtime defaults.
+- Observed failures increase task/node risk cost.
 
-| Phase | Trigger | Action |
-|-------|---------|--------|
-| **A — Coverage** | Any compatible node has **0 observations** | Pick a random unseen node |
-| **B — Depth** | Any node has **< 3 observations** | Pick a random underexplored node |
-| **C — Normal** | All nodes sufficiently explored | 10% random explore · 90% score-based exploit |
+Each node owns `/var/lib/ts-data`. The controller propagates producer node and
+output byte metadata. Same-node children read the host path directly;
+cross-node children fetch from `ts-fileserver` over HTTP. The same provenance
+drives Adaptive's transfer estimate before binding.
 
-### Learning System
+## Evidence
 
-Each task execution produces an **Observation**:
-- `runtime` — actual task execution time
-- `startup` — image pull + container boot time
-- `cpu_usage_ratio` / `memory_usage_ratio` — resource utilization at start
+| Corpus | Size | Headline result |
+|---|---:|---|
+| Closed DAG exploration | 13,800 records; 1,500 cases | Nine policies plus 300 tractable static-oracle references |
+| Closed DAG confirmation | 26,250 records; 3,750 cases | HEFT has 1.69% mean deployable regret; EFT is the close second |
+| Overlapping exploration | 3,600 records; 400 cases | Nine-policy objective and tail comparison |
+| Overlapping confirmation | 7,000 records; 1,000 cases | Historical Legacy leads deadline hit; Adaptive leads response tail; EFT/HEFT lead energy |
+| Legacy tuning | 256 candidates; 90/45/75 train/validation/holdout cases | Tuned exact Legacy improves v1 under cold and warm holdout profiles; P95 makespan is unchanged |
+| Same-host Kind pilot | 6 trials; 30 workflows; 120 final tasks | Adaptive lowers median workflow response 25.18% but raises makespan 21.30% with 17 kill/restart preemptions |
+| Same-host Kind topology matrix | 27 trials; 135 workflows; 540 final tasks | 100% completion; tuned lowers v1 makespan in 3/3 profiles; Adaptive lowers median response 19.40% vs tuned but raises makespan 14.80% with 44 preemptions |
 
-Observations are stored in a **rolling window of 20** per (task, node) pair. The scheduler computes **median** runtime and startup to smooth outliers, then ranks nodes by **total cost** (runtime + startup).
-
-```
-Observation → NodeMetrics (per node, median of 20)
-           → NodeTypeMetrics (per node type, median across nodes)
-           → preferred_node_order (ranked list of node types)
-           → preferred_node_ids (ranked list of specific nodes)
-```
+Raw and derived artifacts are under `results/`. See `ENGINEERING_JOURNAL.md`
+for the decision log, incident history, evidence map, and rejected claims.
 
 ---
 
@@ -176,47 +171,33 @@ Observation → NodeMetrics (per node, median of 20)
 
 ```
 TaskScheduler/
-├── engine.py                    # SchedulerEngine — main tick loop
-├── server.py                    # Flask REST API server
-├── k8s_main.py                  # Direct K8s pod orchestration
-├── k8s_scheduler.py             # Custom K8s scheduler (Deployment mode)
-├── run_simulation.py            # Local simulation (no K8s)
-├── test_simulation.py           # Test suite (7 tests, 25 assertions)
-│
-├── models/
-│   ├── enums.py                 # NodeType, TaskClass, PriorityClass, TaskState...
-│   ├── cluster.py               # Node, RunningTask, ClusterScenario
-│   ├── workload.py              # WorkflowTemplate, TaskTemplate, instances
-│   ├── profile.py               # Observation, NodeMetrics, TaskProfile
-│   └── profile_store.py         # ProfileStore — the learning database
-│
-├── services/
-│   ├── scheduler.py             # PlacementAlgorithm + WorkflowSchedulerRunner
-│   ├── queue_manager.py         # Priority heap + task queue with aging
-│   ├── workflow_manager.py      # DAG resolution + failure propagation
-│   ├── observer.py              # ExecutionObserver — records outcomes
-│   ├── data_manager.py          # Inter-task data passing via filesystem
-│   └── k8s_cluster.py           # Live K8s resource polling (Metrics API)
-│
-├── tasks/
-│   ├── Dockerfile               # Combined image with all 3 task scripts
-│   ├── task_cpu/
-│   │   ├── Dockerfile           # ts-task-cpu:v1
-│   │   └── task_cpu.py          # SHA-256 computation workload
-│   ├── task_io/
-│   │   ├── Dockerfile           # ts-task-io:v1
-│   │   └── task_io.py           # File I/O workload (50 MB write/read)
-│   └── task_mem/
-│       ├── Dockerfile           # ts-task-mem:v1
-│       └── task_mem.py          # Memory allocation workload (200 MB)
-│
-├── workflows/
-│   └── 3taskworkflow.json       # DAG: task-io → task-mem → task-cpu
-│
-├── kind-cluster.yaml            # 6-worker heterogeneous kind cluster
-├── scheduler-deployment.yaml    # K8s RBAC + Deployment for the scheduler
-├── Dockerfile.scheduler         # Container image for k8s_scheduler.py
-└── requirements.txt             # Python dependencies
+├── simulation/                  # Event engine, resource model, policies, analysis
+├── scenarios/
+│   ├── clusters/                # Five calibrated/synthetic cluster families
+│   ├── workflows/               # Fifteen closed DAG families
+│   └── workloads/               # Four overlapping arrival traces
+├── controlplane/
+│   ├── controller/main.py       # Workflow lifecycle and dependency progression
+│   └── scheduler/main.py        # Live placement, binding, learning, preemption
+├── services/                    # Live policies, ECT, profiles, data, telemetry
+├── models/                      # Shared domain models and profile store
+├── crds/                        # Workflow and TaskTemplate CRDs
+├── manifests/                   # Root Kustomize installation resources
+├── images/                      # Controller, fileserver, probe, thermal images
+├── tasks/                       # CPU, memory, and I/O task images
+├── examples/                    # TaskTemplates and sample Workflow objects
+├── experiments/k8s/            # Live experiment TaskTemplates
+├── results/                     # Retained raw records and summaries
+├── tests/                       # Simulator, service, and control-plane tests
+├── thesis/                      # LaTeX paper and generated PDF
+├── run_experiment_lab.py        # Closed and overlapping simulation CLI
+├── tune_legacy_weights.py       # Normalized train/validation/holdout search
+├── analyze_final_evidence.py    # Exploratory/confirmatory synthesis
+├── run_k8s_experiment.py        # Cyclic multi-policy live harness
+├── scripts/run-kind-topology-matrix.ps1
+│                                # Recreate and run three Kind profiles
+├── analyze_kind_topologies.py   # Integrity gate and live aggregation
+└── ENGINEERING_JOURNAL.md       # Decisions, incidents, evidence, open work
 ```
 
 ---
@@ -225,331 +206,239 @@ TaskScheduler/
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| **Python** | 3.9+ | Scheduler runtime |
-| **Docker Desktop** | Latest | Container engine |
-| **kind** | 0.20+ | Local Kubernetes clusters |
-| **kubectl** | 1.28+ | Kubernetes CLI |
+| Python | 3.12 tested | Simulator, controller, scheduler, and harnesses |
+| Docker Desktop | 29.x tested | Images and local node containers |
+| Kind | 0.32 tested | Repeatable same-host Kubernetes |
+| kubectl | 1.36 tested | Install and inspect the control plane |
+| GNU Make + Bash | Optional on Windows | Convenience targets and k3s scripts |
 
 ---
 
-## Quick Start — Local Simulation
+## Simulation Lab
 
-No Kubernetes required. Simulates 6 heterogeneous nodes and 10 workflows:
-
-```bash
-# Create virtual environment
-python -m venv venv
-
-# Activate (Windows PowerShell)
-.\venv\Scripts\Activate.ps1
-
-# Activate (Git Bash / Linux / macOS)
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the simulation
-python run_simulation.py
-
-# Run tests
-python test_simulation.py
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m pytest
 ```
 
-The simulation uses realistic per-node-type runtimes (tasks run 2–3× faster on their matching node type):
+Run a small closed-DAG comparison:
 
-| Task | IO_OPT | CPU_OPT | MEM_OPT |
-|------|-------:|--------:|--------:|
-| task-io | **1.5s** | 4.0s | 3.0s |
-| task-mem | 4.5s | 5.0s | **2.0s** |
-| task-cpu | 5.5s | **2.0s** | 6.0s |
+```powershell
+python run_experiment_lab.py run `
+  --clusters balanced-heterogeneous-4 `
+  --workflows diamond,fanout-1to8 `
+  --policies fcfs,eft,heft,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive `
+  --seeds 0:2 `
+  --sample-uncertainty `
+  --output results/local-closed-smoke
+```
+
+Run a small overlapping-arrival comparison:
+
+```powershell
+python run_experiment_lab.py workload `
+  --clusters balanced-heterogeneous-4 `
+  --workloads priority-burst `
+  --policies fcfs,eft,heft,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive `
+  --seeds 0:2 `
+  --sample-uncertainty `
+  --output results/local-workload-smoke
+```
+
+The CLI writes raw JSON Lines and CSV plus derived JSON and Markdown summaries.
+`run_simulation.py` remains as an older in-process learning demo; it is not the
+source of the definitive experiment matrices.
+
+Run the reproducible Legacy search or factor checks:
+
+```powershell
+python tune_legacy_weights.py --candidates 256 --finalists 25
+python run_legacy_ablation.py --seeds 300:310
+python run_legacy_factor_stress.py
+python analyze_final_evidence.py
+```
+
+The search is finite and objective-specific. The selected vector is the best
+eligible validation finalist observed in that search, not a global optimum.
+The final analyzer reads the retained exploratory and confirmatory JSONL files
+and regenerates `results/final-evidence-synthesis.json` and its Markdown
+companion with deterministic bootstrap seed 2026.
 
 ---
 
 ## Kubernetes Deployment
 
-### Cluster Topology
+Every supported local profile has one control-plane container and worker
+containers on the same Docker host. The final local matrix uses these three
+low-footprint profiles:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     ts-cluster (kind)                           │
-│                                                                 │
-│  ┌──────────────┐                                               │
-│  │ control-plane│                                               │
-│  └──────────────┘                                               │
-│                                                                 │
-│  ┌──────────────┐  ┌──────────────┐     CPU_OPT                │
-│  │ts-node-cpu-1 │  │ts-node-cpu-2 │     2 vCPU · 1 GB RAM      │
-│  └──────────────┘  └──────────────┘                             │
-│                                                                 │
-│  ┌──────────────┐  ┌──────────────┐     MEM_OPT                │
-│  │ts-node-mem-1 │  │ts-node-mem-2 │     1 vCPU · 2 GB RAM      │
-│  └──────────────┘  └──────────────┘                             │
-│                                                                 │
-│  ┌──────────────┐  ┌──────────────┐     IO_OPT                 │
-│  │ts-node-io-1  │  │ts-node-io-2  │     1 vCPU · 1 GB RAM      │
-│  └──────────────┘  └──────────────┘                             │
-└─────────────────────────────────────────────────────────────────┘
-```
+| Profile | Workers | Purpose |
+|---|---|---|
+| `small` | CPU_OPT 2 CPU/1024 MiB; MEM_OPT 1 CPU/1536 MiB; IO_OPT 1 CPU/768 MiB | Balanced heterogeneous |
+| `homogeneous` | Three CPU_OPT workers, each 1.25 CPU/1280 MiB | Equal-capacity control |
+| `skewed` | CPU_OPT 2.5 CPU; MEM_OPT 1792 MiB; IO_OPT advertised I/O 1500 | Strong resource asymmetry |
 
-### 1. Create the Kind Cluster
+`setup_cluster.sh big` remains available for a six-worker, higher-memory local
+profile but is not part of the low-footprint topology matrix.
+
+On Windows, run the Make/Bash commands from Git Bash or WSL with Docker,
+Kind, and kubectl available on `PATH`.
+
+### One-command smoke test
 
 ```bash
-kind create cluster --config kind-cluster.yaml
+make smoke
 ```
 
-Verify nodes are ready:
+This recreates the small Kind cluster, builds and loads all seven images,
+installs the CRDs/control plane/node agents, applies the sample templates and
+workflow, and waits for `linear-pipeline-1` to finish.
+
+### Step-by-step
 
 ```bash
-kubectl get nodes -o wide
+make cluster                 # setup_cluster.sh small + Docker cgroup caps
+make images                  # controller, agents, and three task images
+make load                    # load all images into ts-cluster
+make install                 # kubectl apply -k . and wait for rollouts
+make examples                # TaskTemplates + linear-pipeline-1
+make watch-workflow          # wait for the Workflow CRD to finish
 ```
 
-Expected output — 6 workers + 1 control-plane, all `Ready`:
+The installation entry point is the repository-root `kustomization.yaml`.
+It installs both CRDs, RBAC, controller and scheduler Deployments, and the
+fileserver, bandwidth-probe, and thermal DaemonSets.
 
-```
-NAME                       STATUS   ROLES           AGE   VERSION
-ts-cluster-control-plane   Ready    control-plane   1m    v1.31.x
-ts-node-cpu-1              Ready    <none>          1m    v1.31.x
-ts-node-cpu-2              Ready    <none>          1m    v1.31.x
-ts-node-io-1               Ready    <none>          1m    v1.31.x
-ts-node-io-2               Ready    <none>          1m    v1.31.x
-ts-node-mem-1              Ready    <none>          1m    v1.31.x
-ts-node-mem-2              Ready    <none>          1m    v1.31.x
-```
+### Select a live policy
 
-### 2. Enforce Physical Resource Limits
-
-Kind nodes run as Docker containers. By default they share the host's full resources. Apply **cgroup limits** to simulate real heterogeneous hardware.
-
-> **Important:** Kind names Docker containers differently from K8s node names.
-> Workers are named `ts-cluster-worker`, `ts-cluster-worker2`, ..., `ts-cluster-worker6`
-> in the order they appear in `kind-cluster.yaml`.
-
-First, verify the mapping between Docker containers and K8s nodes:
+The static Kustomize manifest selects Adaptive. Select an explicit policy and
+wait for the new scheduler Pod:
 
 ```bash
-# List all kind containers with their K8s node names
-for container in $(docker ps --filter "label=io.x-k8s.kind.cluster=ts-cluster" --format "{{.Names}}"); do
-  node_name=$(docker exec "$container" hostname)
-  echo "$container  →  $node_name"
-done
+kubectl -n ts-system set env deployment/ts-scheduler TS_POLICY=adaptive
+kubectl -n ts-system rollout status deployment/ts-scheduler --timeout=120s
+kubectl -n ts-system logs deployment/ts-scheduler --tail=50
 ```
 
-Then apply resource limits:
+Use `TS_POLICY=legacy-v1`, `legacy-tuned`, or `adaptive` for comparisons;
+`legacy` remains an alias for v1. The startup log identifies the selected
+implementation; verify it before collecting results.
 
-```bash
-# CPU-Optimised nodes (2 vCPU, 1 GB RAM)
-docker update --cpus 2 --memory 1g --memory-swap 1g ts-cluster-worker     # ts-node-cpu-1
-docker update --cpus 2 --memory 1g --memory-swap 1g ts-cluster-worker2    # ts-node-cpu-2
+### Run the retained live protocol
 
-# Memory-Optimised nodes (1 vCPU, 2 GB RAM)
-docker update --cpus 1 --memory 2g --memory-swap 2g ts-cluster-worker3    # ts-node-mem-1
-docker update --cpus 1 --memory 2g --memory-swap 2g ts-cluster-worker4    # ts-node-mem-2
+The harness deletes only objects labeled for its experiment, rotates policy
+order by repetition, isolates profile state by policy/run, records exact Legacy
+weights, and writes partial results after every trial:
 
-# IO-Optimised nodes (1 vCPU, 1 GB RAM)
-docker update --cpus 1 --memory 1g --memory-swap 1g ts-cluster-worker5    # ts-node-io-1
-docker update --cpus 1 --memory 1g --memory-swap 1g ts-cluster-worker6    # ts-node-io-2
+```powershell
+python run_k8s_experiment.py `
+  --policies legacy-v1 legacy-tuned adaptive `
+  --repetitions 3 `
+  --topology-name small `
+  --output results/k8s-kind/policy-comparison-local.json
 ```
 
-> **Note:** The container-to-node mapping above assumes kind creates workers in YAML order,
-> which is the default behavior. Always verify with the `for` loop above after cluster creation.
+Run the complete same-host topology matrix from PowerShell:
 
-### 3. Install Metrics Server
+```powershell
+& .\scripts\run-kind-topology-matrix.ps1 `
+  -Profiles small,homogeneous,skewed `
+  -Repetitions 3 `
+  -Seed 2026
 
-The scheduler polls real CPU/memory usage via the Kubernetes Metrics API. Install metrics-server with flags for kind compatibility:
-
-```bash
-kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-
-# Patch for kind (self-signed certs + hostname resolution)
-kubectl patch deployment metrics-server -n kube-system --type=json \
-  -p '[
-    {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"},
-    {"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-preferred-address-types=InternalIP"}
-  ]'
+python analyze_kind_topologies.py
 ```
 
-Wait for it to be ready (~60 seconds):
+The runner deliberately recreates `ts-cluster` for each profile and must not
+share the host with a simulator benchmark. The analyzer rejects incomplete
+artifacts, failed final tasks, container restarts, scheduler errors, incorrect
+weights, missing policies/repetitions, and cross-policy profile reuse. Its JSON
+and Markdown outputs include topology-level, aggregate, and per-workflow-shape
+response summaries for final policy recommendations, plus per-repetition
+makespan/response sequences for assessing whether policy-isolated profile
+accumulation coincides with improvement.
 
-```bash
-kubectl rollout status deployment/metrics-server -n kube-system --timeout=120s
+The retained matrix passes every gate: 27/27 trials, 135/135 workflows, and
+540/540 final tasks complete successfully, with no final task failure,
+scheduler error, collection error, or container restart.
 
-# Verify metrics are available
-kubectl top nodes
-```
+The earlier six-trial pilot remains at
+`results/k8s-kind/policy-comparison.json`. It compares original exact Legacy
+with Adaptive and is formative mechanism evidence, not part of the final
+three-policy aggregate.
 
-### 4. Build & Load Container Images
+### Physical k3s path
 
-Build the task images and load them into the kind cluster (no registry needed):
-
-```bash
-# Build task images
-docker build -t ts-task-cpu:v1 tasks/task_cpu/
-docker build -t ts-task-mem:v1 tasks/task_mem/
-docker build -t ts-task-io:v1  tasks/task_io/
-
-# Build the scheduler image
-docker build -t ts-scheduler:v1 -f Dockerfile.scheduler .
-
-# Load all images into kind
-kind load docker-image ts-task-cpu:v1 ts-task-mem:v1 ts-task-io:v1 ts-scheduler:v1 \
-  --name ts-cluster
-```
-
-### 5. Deploy the Scheduler
-
-The deployment manifest creates: ServiceAccount, ClusterRole, ClusterRoleBinding, and Deployment.
-
-```bash
-kubectl apply -f scheduler-deployment.yaml
-```
-
-Verify the scheduler pod is running:
-
-```bash
-kubectl get pods -l app=ts-scheduler
-kubectl logs -l app=ts-scheduler -f
-```
-
-### 6. Verify Labels & Nodes
-
-```bash
-# Check node types are correctly labelled
-kubectl get nodes --show-labels | grep -E "node-type|ts.capacity"
-
-# Compact view
-kubectl get nodes -L node-type -L ts.capacity/cpu -L ts.capacity/memory
-```
-
-Expected:
-
-```
-NAME              STATUS   node-type   ts.capacity/cpu   ts.capacity/memory
-ts-node-cpu-1     Ready    CPU_OPT     2.0               1024
-ts-node-cpu-2     Ready    CPU_OPT     2.0               1024
-ts-node-mem-1     Ready    MEM_OPT     1.0               2048
-ts-node-mem-2     Ready    MEM_OPT     1.0               2048
-ts-node-io-1      Ready    IO_OPT      1.0               1024
-ts-node-io-2      Ready    IO_OPT      1.0               1024
-```
-
-### 7. Submit a Workflow
-
-Create a test pod using the custom scheduler:
-
-```bash
-cat <<'EOF' | kubectl apply -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: test-io-task
-  annotations:
-    ts.scheduler/task_class: "IO_BOUND"
-    ts.scheduler/compatible_node_types: "IO_OPT,CPU_OPT,MEM_OPT"
-spec:
-  schedulerName: ts-scheduler
-  containers:
-    - name: worker
-      image: ts-task-io:v1
-      imagePullPolicy: Never
-      resources:
-        requests:
-          cpu: "500m"
-          memory: "128Mi"
-        limits:
-          cpu: "1"
-          memory: "256Mi"
-  restartPolicy: Never
-EOF
-```
-
-Watch the scheduler assign it:
-
-```bash
-kubectl get pod test-io-task -w
-kubectl logs test-io-task
-```
-
-### 8. Run from Local Machine (Development)
-
-For faster iteration, run the scheduler locally while connected to the kind cluster:
-
-```bash
-# Ensure kubeconfig points to kind
-kubectl config use-context kind-ts-cluster
-
-# Option A: Direct orchestrator (sequential DAG execution)
-python k8s_main.py
-
-# Option B: REST API server (simulated mode)
-python server.py --simulate
-
-# Option C: REST API server (live K8s mode)
-python server.py
-```
+`cluster.env.example`, `scripts/k3s-server.sh`, `scripts/k3s-agent.sh`, and the
+`make k3s-*`, `images-multiarch`, and `install-remote` targets define a
+multi-machine path. That path has not been executed for the retained evidence.
+Do not describe script availability as completed physical validation.
 
 ---
 
 ## Monitoring & Debugging
 
 ```bash
-# Watch all pods in real time
-kubectl get pods -A -w
+# Control-plane and node-agent health
+kubectl -n ts-system get deployments,daemonsets,pods -o wide
 
-# Check scheduler logs
-kubectl logs -l app=ts-scheduler -f --tail=100
+# Controller and scheduler logs
+make logs-controller
+make logs-scheduler
 
-# View node resource usage (requires metrics-server)
-kubectl top nodes
-kubectl top pods
+# Workflow state and task placement
+kubectl get workflows -A
+kubectl get pods -A -o wide
 
-# Debug a specific pod
-kubectl describe pod <pod-name>
-kubectl logs <pod-name>
+# Declared heterogeneity
+kubectl get nodes -L node-type -L ts.capacity/cpu -L ts.capacity/memory
 
-# Check events for scheduling decisions
-kubectl get events --sort-by=.metadata.creationTimestamp | tail -20
+# Bandwidth and thermal annotations for one node
+kubectl get node ts-node-cpu-1 -o yaml | grep -E 'ts.io/(bw-from|cpu-temp)'
 
-# Inspect a node's running pods
-kubectl get pods --field-selector spec.nodeName=ts-node-cpu-1
+# Persisted scheduler profile ConfigMap
+kubectl -n ts-system get configmap ts-scheduler-profiles -o yaml
 ```
+
+For a failed Workflow, inspect its `status.tasks`, the controller log, the
+scheduler log, and the final Pod log. A deleted preemption victim is recreated
+as a new Pod, so it will not appear as a container restart on the final Pod.
 
 ---
 
 ## Testing
 
-The test suite runs **7 tests with 25 assertions** — no external dependencies required:
+The main executable gate is:
 
-```bash
-python test_simulation.py
+```powershell
+python -m pytest
 ```
 
-| Test | What it validates |
-|------|-------------------|
-| `test_basic_dag` | IO → MEM → CPU executes in correct DAG order |
-| `test_concurrent_workflows` | Two workflows run independently in parallel |
-| `test_warm_image_bonus` | Image warmth score is 0 before first run, 10 after |
-| `test_failure_propagation` | Failed parent cascades FAILED to all descendants |
-| `test_learning_convergence` | After 15 runs, IO tasks prefer IO_OPT nodes |
-| `test_exploration_covers_all_nodes` | First 3 runs visit 3 distinct node types |
-| `test_priority_ordering` | CRITICAL tasks dispatch before BATCH |
+The suite covers schemas and scenario provenance, virtual time, resource
+conservation, thermal behavior, policies, failures/checkpoints, gangs,
+preemption, experiment output, live ECT/UCB, controller retry/failure
+propagation, scheduler binding/deletion, and the live harness.
+
+Additional build checks:
+
+```bash
+python -m compileall simulation services controlplane models
+kubectl kustomize . > /dev/null
+kubectl apply --dry-run=server -k .   # requires a reachable cluster
+cd thesis && latexmk -pdf -interaction=nonstopmode -halt-on-error thesis.tex
+```
 
 ---
 
 ## Cleanup
 
 ```bash
-# Delete all test pods
-kubectl delete pods --all
-
-# Delete the entire cluster
-kind delete cluster --name ts-cluster
+make uninstall   # remove TaskScheduler resources from the current cluster
+make clean       # delete the local Kind cluster
 ```
 
----
-
-<div align="center">
-
-*Built for the Master's Thesis — University Politehnica of Bucharest, 2026*
-
-</div>
+The live experiment harness removes its own labeled Workflow and Pod objects
+unless `--keep-workflows` is supplied. It does not delete the retained JSON
+result artifact.

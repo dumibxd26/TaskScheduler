@@ -6,7 +6,7 @@ source of truth today; this chart will progressively template them.
 For now use:
 
 ```sh
-kubectl apply -k manifests/
+kubectl apply -k ../..
 ```
 
 When the chart templates are filled in, `helm install ts-scheduler ./charts/ts-scheduler`

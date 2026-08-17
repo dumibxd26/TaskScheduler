@@ -1,0 +1,55 @@
+apiVersion: ts.io/v1
+kind: TaskTemplate
+metadata:
+  name: experiment-io
+spec:
+  image: ts-task-io:v1
+  imagePullPolicy: Never
+  taskClass: IO_BOUND
+  cpuRequest: "0.5"
+  memoryRequest: "384Mi"
+  compatibleNodeTypes: [CPU_OPT, MEM_OPT, IO_OPT]
+  expectedOutputBytes: 104857600
+---
+apiVersion: ts.io/v1
+kind: TaskTemplate
+metadata:
+  name: experiment-mem
+spec:
+  image: ts-task-mem:v1
+  imagePullPolicy: Never
+  taskClass: MEMORY_BOUND
+  cpuRequest: "0.5"
+  memoryRequest: "512Mi"
+  compatibleNodeTypes: [CPU_OPT, MEM_OPT, IO_OPT]
+  expectedOutputBytes: 1024
+---
+apiVersion: ts.io/v1
+kind: TaskTemplate
+metadata:
+  name: experiment-cpu
+spec:
+  image: ts-task-cpu:v1
+  imagePullPolicy: Never
+  taskClass: CPU_BOUND
+  cpuRequest: "0.5"
+  memoryRequest: "256Mi"
+  compatibleNodeTypes: [CPU_OPT, MEM_OPT, IO_OPT]
+  command: ["sh", "-c"]
+  args: ["export processed_array_size=400; exec python3 task_cpu.py"]
+  expectedOutputBytes: 256
+---
+apiVersion: ts.io/v1
+kind: TaskTemplate
+metadata:
+  name: experiment-cpu-long
+spec:
+  image: ts-task-cpu:v1
+  imagePullPolicy: Never
+  taskClass: CPU_BOUND
+  cpuRequest: "0.5"
+  memoryRequest: "256Mi"
+  compatibleNodeTypes: [CPU_OPT, MEM_OPT, IO_OPT]
+  command: ["sh", "-c"]
+  args: ["export processed_array_size=1000; exec python3 task_cpu.py"]
+  expectedOutputBytes: 256

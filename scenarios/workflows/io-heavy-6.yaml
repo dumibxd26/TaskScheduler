@@ -1,0 +1,13 @@
+schema_version: 1
+workflow:
+  id: io-heavy-6
+  family: io-heavy
+  tags: [resource, storage, iops]
+  description: Mixed sequential and random storage tasks expose throughput and IOPS limits.
+  tasks:
+    - &io {id: io-1, class: IO_BOUND, image: bench/io:v1, image_size_mib: 72, startup_s: 0.15, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 768, working_set_mib: 256, compute_gflop: 8, disk_read_mib: 12000, disk_write_mib: 6000, random_io_fraction: 0.65, io_block_kib: 8}
+    - {<<: *io, id: io-2}
+    - {<<: *io, id: io-3}
+    - {<<: *io, id: io-4}
+    - {<<: *io, id: io-5}
+    - {<<: *io, id: io-6}

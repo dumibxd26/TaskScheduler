@@ -1,0 +1,48 @@
+schema_version: 1
+cluster:
+  id: local-i5-8300h
+  family: local-calibration
+  description: Single-node profile for the development laptop.
+  calibration:
+    status: estimated
+    source: Windows hardware inventory plus conservative initial throughput estimates; run calibration before empirical use.
+    uncertainty_fraction: 0.25
+  nodes:
+    - id: laptop
+      type: GENERAL
+      cooling_class: PASSIVE
+      background_cpu_fraction: 0.08
+      background_memory_mib: 1536
+      initial_warm_images: [bench/cpu:v1, bench/memory:v1, bench/io:v1, bench/mixed:v1]
+      cpu:
+        architecture: amd64
+        microarchitecture: Coffee Lake i5-8300H
+        physical_cores: 4
+        threads_per_core: 2
+        base_frequency_ghz: 2.3
+        max_frequency_ghz: 4.0
+        calibrated_gflops_per_core: 8.0
+        l3_cache_mib: 8
+        idle_power_w: 8
+        max_power_w: 45
+        smt_efficiency: 0.28
+        vector_extensions: [SSE4.2, AVX2]
+      memory:
+        capacity_mib: 12288
+        calibrated_bandwidth_mib_s: 18000
+        latency_ns: 85
+        channels: 2
+      storage:
+        capacity_mib: 476000
+        sequential_read_mib_s: 2500
+        sequential_write_mib_s: 1800
+        random_read_iops: 250000
+        random_write_iops: 180000
+      thermal:
+        ambient_c: 23
+        initial_c: 42
+        throttle_c: 95
+        shutdown_c: 100
+        thermal_resistance_c_per_w: 1.35
+        thermal_capacitance_j_per_c: 45
+        minimum_throttle_factor: 0.45

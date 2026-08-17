@@ -1,12 +1,21 @@
 import random
 import time
+from dataclasses import dataclass
 from typing import List, Optional, Dict
 from models.enums import NodeType
 from models.workload import TaskInstance, TaskTemplate, DependencyEdge
 from models.cluster import Node, ClusterScenario
 from models.profile_store import ProfileStore
 
-__all__ = ["ProfileStore", "PlacementAlgorithm", "WorkflowSchedulerRunner"]
+__all__ = [
+    "LEGACY_TUNED_WEIGHTS",
+    "LEGACY_V1_WEIGHTS",
+    "LegacyWeights",
+    "ProfileStore",
+    "PlacementAlgorithm",
+    "WorkflowSchedulerRunner",
+    "legacy_weights_for_policy",
+]
 
 # -------------------------------------------------------------------
 # Scoring weights (tune these to change scheduling behaviour)
@@ -31,9 +40,46 @@ EXPLORATION_RATE = 0.10
 MIN_OBSERVATIONS_PER_NODE = 3
 
 
+@dataclass(frozen=True)
+class LegacyWeights:
+    type_affinity: float = W_TYPE_AFFINITY
+    resource_fit: float = W_RESOURCE_FIT
+    node_availability: float = W_NODE_AVAILABILITY
+    warm_image: float = W_WARM_IMAGE
+    load_balance: float = W_LOAD_BALANCE
+    failure_penalty: float = W_FAILURE_PENALTY
+    data_locality: float = W_DATA_LOCALITY
+    memory_pressure: float = W_MEMORY_PRESSURE
+
+
+LEGACY_V1_WEIGHTS = LegacyWeights()
+LEGACY_TUNED_WEIGHTS = LegacyWeights(
+    type_affinity=23.662419002810662,
+    resource_fit=18.264722337156538,
+    node_availability=6.140552511166027,
+    warm_image=31.795995946973218,
+    load_balance=6.916622266503629,
+    failure_penalty=-19.80133811150127,
+    data_locality=11.257918606183544,
+    memory_pressure=-7.160431217705109,
+)
+
+
+def legacy_weights_for_policy(name: str | None) -> LegacyWeights:
+    normalized = (name or "legacy").strip().lower().replace("_", "-")
+    if normalized in {"legacy", "legacy-v1", "legacy-eight-factor", "eight-factor"}:
+        return LEGACY_V1_WEIGHTS
+    if normalized == "legacy-tuned":
+        return LEGACY_TUNED_WEIGHTS
+    raise ValueError(
+        f"Unknown Legacy policy '{name}'. Available: 'legacy-v1', 'legacy-tuned'.")
+
+
 class PlacementAlgorithm:
-    def __init__(self, profile_store: ProfileStore):
+    def __init__(self, profile_store: ProfileStore,
+                 weights: Optional[LegacyWeights] = None):
         self.profile_store = profile_store
+        self.weights = weights or LegacyWeights()
 
     def score_node(self, task: TaskInstance, template: TaskTemplate,
                    node: Node, parent_node_ids: List[str] = None) -> Dict[str, float]:
@@ -49,11 +95,14 @@ class PlacementAlgorithm:
             order = profile.preferred_node_order
             if node.node_type in order:
                 rank = order.index(node.node_type)
-                scores["type_affinity"] = W_TYPE_AFFINITY * (1.0 - rank / max(len(order), 1))
+                scores["type_affinity"] = self.weights.type_affinity * (
+                    1.0 - rank / max(len(order), 1))
             else:
                 scores["type_affinity"] = 0.0
         else:
-            scores["type_affinity"] = W_TYPE_AFFINITY * 0.5 if node.node_type in template.compatible_node_types else 0.0
+            scores["type_affinity"] = (
+                self.weights.type_affinity * 0.5
+                if node.node_type in template.compatible_node_types else 0.0)
 
         # --- 2. Resource fit (0 to W_RESOURCE_FIT) ---
         cpu_fit = 0.0
@@ -71,33 +120,38 @@ class PlacementAlgorithm:
             usable = min(node.free_cpu, template.max_cores)
             core_bonus = usable / template.max_cores
 
-        scores["resource_fit"] = W_RESOURCE_FIT * (cpu_fit * 0.35 + mem_fit * 0.35 + core_bonus * 0.30)
+        scores["resource_fit"] = self.weights.resource_fit * (
+            cpu_fit * 0.35 + mem_fit * 0.35 + core_bonus * 0.30)
 
         # --- 3. Warm image (0 or W_WARM_IMAGE) ---
-        scores["warm_image"] = W_WARM_IMAGE if template.image_name in node.warm_images else 0.0
+        scores["warm_image"] = (
+            self.weights.warm_image
+            if template.image_name in node.warm_images else 0.0)
 
         # --- 4. Load balancing (0 to W_LOAD_BALANCE) ---
         max_tasks = max(node.total_cpu * 2, 4)
         load_ratio = node.running_tasks / max_tasks
-        scores["load_balance"] = W_LOAD_BALANCE * (1.0 - min(load_ratio, 1.0))
+        scores["load_balance"] = self.weights.load_balance * (
+            1.0 - min(load_ratio, 1.0))
 
         # --- 5. Node availability forecast (0 to W_NODE_AVAILABILITY) ---
         free_in = node.estimated_free_in
         if free_in is not None:
             if free_in == 0.0:
-                scores["availability"] = W_NODE_AVAILABILITY
+                scores["availability"] = self.weights.node_availability
             else:
-                scores["availability"] = W_NODE_AVAILABILITY * max(0.0, 1.0 - free_in / 30.0)
+                scores["availability"] = self.weights.node_availability * max(
+                    0.0, 1.0 - free_in / 30.0)
         else:
-            scores["availability"] = W_NODE_AVAILABILITY * 0.3
+            scores["availability"] = self.weights.node_availability * 0.3
 
         # --- 6. Failure penalty (0 to W_FAILURE_PENALTY, negative) ---
         fail_rate = self.profile_store.get_failure_rate(task.task_template_id, node.node_id)
-        scores["failure_penalty"] = W_FAILURE_PENALTY * fail_rate
+        scores["failure_penalty"] = self.weights.failure_penalty * fail_rate
 
         # --- 7. Data locality (0 or W_DATA_LOCALITY) ---
         if parent_node_ids and node.node_id in parent_node_ids:
-            scores["data_locality"] = W_DATA_LOCALITY
+            scores["data_locality"] = self.weights.data_locality
         else:
             scores["data_locality"] = 0.0
 
@@ -107,7 +161,7 @@ class PlacementAlgorithm:
         free_mem_ratio = node.free_memory / max(node.total_memory, 1)
         if free_mem_ratio < MEMORY_PRESSURE_THRESHOLD:
             pressure = 1.0 - (free_mem_ratio / MEMORY_PRESSURE_THRESHOLD)
-            scores["memory_pressure"] = W_MEMORY_PRESSURE * pressure
+            scores["memory_pressure"] = self.weights.memory_pressure * pressure
         else:
             scores["memory_pressure"] = 0.0
 

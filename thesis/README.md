@@ -1,32 +1,45 @@
-# Thesis source
+# Thesis Source
 
-Build:
+The paper documents nine-policy exploratory simulation, fresh-seed
+confirmation, exact Legacy weight tuning and factor checks, the earlier
+six-trial Kind pilot, and the accepted 27-trial, three-policy Kind topology
+matrix. It explicitly treats all Kind workers as same-host containers and
+marks physical multi-machine k3s validation as pending.
+
+Build with `latexmk` so references and the table of contents converge:
 
 ```sh
 cd thesis
-pdflatex thesis.tex
-pdflatex thesis.tex      # second pass for refs / ToC
+latexmk -pdf -interaction=nonstopmode -halt-on-error thesis.tex
 ```
 
-Or, if you have `latexmk`:
+The validated build produces `thesis.pdf` with no undefined citations or
+references. Page count changes as final result tables are reconciled. MiKTeX
+may still report its own update reminder.
 
-```sh
-latexmk -pdf thesis.tex
-```
+Optional title-page assets:
 
-Required logos under `pics/` (the title-page template expects them):
+- `pics/upb-logo.jpg`
+- `pics/cs-logo.pdf`
 
-- `pics/upb-logo.jpg` — UPB logo
-- `pics/cs-logo.pdf`  — CS/AC department logo
+The document compiles without them and renders labeled placeholders instead.
 
-If you don't have them yet, the document will still compile but the
-title page will show "missing file" placeholders. Drop them in and
-recompile.
+The title metadata in `thesis.tex` is set to Bogdan Dumitrescu,
+Prof. dr. ing. Radu-Ioan Ciobanu, and 2026.
 
-Things to fill in before submission:
+Do not edit reported numbers from memory. Their authoritative inputs are:
 
-- `\Name` — your full name (top of `thesis.tex`)
-- `\Advisor` — advisor name
-- `\Year` — defense year
-- Chapter "Results" is intentionally left empty until the experiments
-  on the two-host cluster are run.
+- `../results/legacy-weight-search.json`
+- `../results/legacy-factor-ablation.json`
+- `../results/legacy-factor-stress.json`
+- `../results/final-all-legacy-20seed/`
+- `../results/final-all-workload-20seed/`
+- `../results/confirmatory-single-seeds200-249/`
+- `../results/confirmatory-workload-seeds200-249/`
+- `../results/final-evidence-synthesis.json`
+- `../results/k8s-kind/policy-comparison.json` (earlier pilot)
+- `../results/k8s-kind-topologies/summary.json` and `summary.md` (strictly
+	accepted final same-host topology matrix)
+
+The engineering rationale and evidence boundaries are recorded in
+`../ENGINEERING_JOURNAL.md`.

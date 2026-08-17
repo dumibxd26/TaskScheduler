@@ -1,0 +1,25 @@
+schema_version: 1
+workflow:
+  id: fanin-8to1
+  family: fan-in
+  tags: [topology, parallelism, network]
+  description: Eight producers send independent outputs to one memory-heavy reducer.
+  tasks:
+    - &producer {id: producer-1, class: CPU_BOUND, image: bench/cpu:v1, image_size_mib: 96, startup_s: 0.15, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 512, working_set_mib: 192, compute_gflop: 64}
+    - {<<: *producer, id: producer-2}
+    - {<<: *producer, id: producer-3}
+    - {<<: *producer, id: producer-4}
+    - {<<: *producer, id: producer-5}
+    - {<<: *producer, id: producer-6}
+    - {<<: *producer, id: producer-7}
+    - {<<: *producer, id: producer-8}
+    - {id: reducer, class: MEMORY_BOUND, image: bench/mixed:v1, image_size_mib: 110, startup_s: 0.25, supported_architectures: [amd64, arm64], cpu_cores: 2, memory_mib: 3072, working_set_mib: 2048, compute_gflop: 48, memory_read_mib: 16000, memory_write_mib: 4000, parallel_fraction: 0.6}
+  dependencies:
+    - {parent: producer-1, child: reducer, data_mib: 512}
+    - {parent: producer-2, child: reducer, data_mib: 512}
+    - {parent: producer-3, child: reducer, data_mib: 512}
+    - {parent: producer-4, child: reducer, data_mib: 512}
+    - {parent: producer-5, child: reducer, data_mib: 512}
+    - {parent: producer-6, child: reducer, data_mib: 512}
+    - {parent: producer-7, child: reducer, data_mib: 512}
+    - {parent: producer-8, child: reducer, data_mib: 512}

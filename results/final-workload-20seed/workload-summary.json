@@ -1,0 +1,76 @@
+{
+  "case_count": 400,
+  "ranking": [
+    {
+      "cases": 400,
+      "deadline_hit_rate": 0.6,
+      "mean_preemptions": 0.0,
+      "median_energy_j": 3738.1907084526174,
+      "median_makespan_s": 62.42112824994565,
+      "median_response_regret": 0.00046780855426042933,
+      "p95_response_regret": 0.6745772067743894,
+      "policy": "legacy"
+    },
+    {
+      "cases": 400,
+      "deadline_hit_rate": 0.5333333333333333,
+      "mean_preemptions": 0.75,
+      "median_energy_j": 3738.1907084526174,
+      "median_makespan_s": 55.07044224040132,
+      "median_response_regret": 0.0017814520002316092,
+      "p95_response_regret": 0.5275482151139976,
+      "policy": "adaptive"
+    },
+    {
+      "cases": 400,
+      "deadline_hit_rate": 0.5333333333333333,
+      "mean_preemptions": 0.0,
+      "median_energy_j": 3738.1907084526174,
+      "median_makespan_s": 55.07044224040132,
+      "median_response_regret": 0.0026284065292347947,
+      "p95_response_regret": 0.5275482151139976,
+      "policy": "adaptive-no-preempt"
+    },
+    {
+      "cases": 400,
+      "deadline_hit_rate": 0.5333333333333333,
+      "mean_preemptions": 0.0,
+      "median_energy_j": 3080.432134988809,
+      "median_makespan_s": 55.07044224040132,
+      "median_response_regret": 0.006205047721560719,
+      "p95_response_regret": 0.6679999043434557,
+      "policy": "eft"
+    },
+    {
+      "cases": 400,
+      "deadline_hit_rate": 0.5333333333333333,
+      "mean_preemptions": 0.0,
+      "median_energy_j": 3080.432134988809,
+      "median_makespan_s": 55.07044224040132,
+      "median_response_regret": 0.006205047721560719,
+      "p95_response_regret": 0.6679999043434557,
+      "policy": "heft"
+    },
+    {
+      "cases": 400,
+      "deadline_hit_rate": 0.5333333333333333,
+      "mean_preemptions": 0.0,
+      "median_energy_j": 4909.228841010809,
+      "median_makespan_s": 73.57050020503048,
+      "median_response_regret": 0.5718598286581285,
+      "p95_response_regret": 11.115699977147324,
+      "policy": "fcfs"
+    },
+    {
+      "cases": 400,
+      "deadline_hit_rate": 0.23333333333333334,
+      "mean_preemptions": 0.0,
+      "median_energy_j": 6772.655995309191,
+      "median_makespan_s": 148.84981089402862,
+      "median_response_regret": 1.1269923420399472,
+      "p95_response_regret": 17.558250916599352,
+      "policy": "random"
+    }
+  ],
+  "record_count": 2800
+}

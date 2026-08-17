@@ -82,6 +82,11 @@ class TaskInstance:
     start_time: Optional[float] = None
     finish_time: Optional[float] = None
 
+    # Live Kubernetes tasks carry producer locations explicitly because the
+    # controller creates child Pods only after their parents have completed.
+    parent_node_ids: List[str] = field(default_factory=list)
+    input_bytes_by_node: Dict[str, int] = field(default_factory=dict)
+
     # Wall-clock time of the most recent successful checkpoint (None = never).
     # Set by the engine when a checkpoint completes. Used by the preemption
     # planner to pick checkpoint vs kill+restart.

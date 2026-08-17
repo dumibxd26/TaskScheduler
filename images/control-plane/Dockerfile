@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy only what the control-plane needs to keep the image small.
 COPY models/    ./models/
 COPY services/  ./services/
-COPY cmd/       ./cmd/
+COPY controlplane/ ./controlplane/
 COPY engine.py  ./engine.py
 
 # Default command is the scheduler; the controller deployment overrides it.
-CMD ["python3", "-m", "cmd.scheduler.main"]
+CMD ["python3", "-m", "controlplane.scheduler.main"]

@@ -14,11 +14,15 @@ class TaskClass(Enum):
 class WorkflowClass(Enum):
     REAL_TIME = auto()
     BATCH = auto()
+    INTERACTIVE = auto()
+    PIPELINE = auto()
+    BURST = auto()
 
 # Using int allows for easy > or < comparisons in your priority queues later.
 # Higher value = higher urgency.
 # Aging: REAL_TIME_MEDIUM -> REAL_TIME_HIGH after a TTL. Others don't age.
 class PriorityClass(int, Enum):
+    BEST_EFFORT     = 0
     BATCH           = 1
     REAL_TIME_MEDIUM = 2
     REAL_TIME_HIGH   = 3

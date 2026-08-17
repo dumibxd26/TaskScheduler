@@ -1,0 +1,11 @@
+schema_version: 1
+workflow:
+  id: cache-sensitive
+  family: cache-sensitive
+  tags: [resource, cache, memory]
+  description: Equal logical memory traffic with small and large reusable working sets.
+  tasks:
+    - &cached {id: cache-small, class: MEMORY_BOUND, image: bench/memory:v1, image_size_mib: 80, startup_s: 0.15, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 1024, working_set_mib: 4, compute_gflop: 4, memory_read_mib: 24000, memory_write_mib: 2000, cache_reuse_fraction: 0.9}
+    - <<: *cached
+      id: cache-large
+      working_set_mib: 512

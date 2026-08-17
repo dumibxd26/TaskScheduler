@@ -2,7 +2,7 @@
 #  TaskScheduler — one-file install manifest.
 #
 #  Apply with:
-#      kubectl apply -f manifests/install.yaml
+#      kubectl apply -k .
 #
 #  Prerequisites (images on the target nodes, e.g. via `kind load`):
 #      ts-control-plane:v1    -- shared base image for controller + scheduler
@@ -14,10 +14,10 @@
 #      kubectl apply -f examples/linear-3task.yaml
 #      kubectl get workflows -w
 # ═══════════════════════════════════════════════════════════════════════
-# This file is just a pointer to the modular k8s/ + crds/ assets — kubectl
-# apply -f manifests/install.yaml -R will pull them all in.
+# This file documents the modular k8s/ + crds/ assets. The repository-root
+# kustomization.yaml is the executable installation entry point.
 #
 # If you want a single static document, run:
-#     kustomize build manifests/  > installed.yaml
+#     kubectl kustomize . > installed.yaml
 #
 # To keep the source-of-truth modular we ship a small kustomization here.

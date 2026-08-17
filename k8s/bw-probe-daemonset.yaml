@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────
 # ts-bw-probe — one Pod per node. Every 10 minutes, curls the 100 MB probe
 # file from every peer node's ts-fileserver and writes the measured
-# bandwidth as a Node annotation (ts.io/bw-to-<peer>=<MB/s>).
+# bandwidth as a Node annotation (ts.io/bw-from-<peer>=<MB/s>).
 #
 # Needs a ServiceAccount with patch permission on Nodes.
 # ─────────────────────────────────────────────────────────────────────────

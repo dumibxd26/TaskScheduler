@@ -44,7 +44,7 @@ RECONCILE_INTERVAL_S = float(os.environ.get("TS_RECONCILE_INTERVAL_S", "2"))
 # ─────────────────────────────────────────────────────────────────────────
 class _TaskState:
     __slots__ = ("name", "template_name", "depends_on", "state",
-                 "pod_name", "node_name", "started_at", "finished_at",
+                 "pod_name", "node_name", "node_ip", "started_at", "finished_at",
                  "outputs")
 
     def __init__(self, name: str, template_name: str,
@@ -56,6 +56,7 @@ class _TaskState:
         self.state = "WAITING"
         self.pod_name: Optional[str] = None
         self.node_name: Optional[str] = None
+        self.node_ip: Optional[str] = None
         self.started_at: Optional[str] = None
         self.finished_at: Optional[str] = None
         self.outputs: Dict[str, Any] = {}
@@ -145,11 +146,39 @@ class WorkflowController:
             "ts.scheduler/expected_output_bytes":
                 str(tmpl_spec.get("expectedOutputBytes", 0)),
             "ts.scheduler/priority": wf.priority,
+            "ts.scheduler/workflow_class": wf.workflow_class,
+            "ts.scheduler/preemptable": str(wf.preemptable).lower(),
         }
         if tmpl_spec.get("gangGroupId"):
             annotations["ts.scheduler/gang_group_id"] = tmpl_spec["gangGroupId"]
         if tmpl_spec.get("checkpointable"):
             annotations["ts.scheduler/checkpointable"] = "true"
+
+        data_dependencies = []
+        for dependency in task.depends_on:
+            if dependency.get("dependencyType", "DATA") != "DATA":
+                continue
+            parent = wf.tasks.get(dependency["parent"])
+            if parent is None or not parent.node_name:
+                continue
+            expected_bytes = 0
+            parent_template = self.template_cache.get(parent.template_name, {})
+            try:
+                expected_bytes = int(
+                    parent.outputs.get(
+                        "bytes_written",
+                        parent_template.get("expectedOutputBytes", 0),
+                    ))
+            except (TypeError, ValueError):
+                pass
+            data_dependencies.append({
+                "parent": parent.name,
+                "node": parent.node_name,
+                "bytes": max(0, expected_bytes),
+            })
+        if data_dependencies:
+            annotations["ts.scheduler/data_dependencies"] = json.dumps(
+                data_dependencies, separators=(",", ":"))
 
         labels = {
             LABEL_WORKFLOW: wf.name,
@@ -280,7 +309,7 @@ class WorkflowController:
                     f"/{wf.name}/{parent.pod_name}"
                 )
                 env[f"TS_PARENT_{key}_FILESERVER_URL"] = (
-                    f"http://{parent.node_name}:{fileserver_port}"
+                    f"http://{parent.node_ip or parent.node_name}:{fileserver_port}"
                     f"/{wf.name}/{parent.pod_name}"
                 )
         return env
@@ -325,6 +354,30 @@ class WorkflowController:
         self._patch_status(wf)
 
     def _check_terminal(self, wf: _WorkflowState):
+        changed = True
+        while changed:
+            changed = False
+            for task in wf.tasks.values():
+                if task.state != "WAITING":
+                    continue
+                failed_parent = next(
+                    (
+                        wf.tasks.get(dependency["parent"])
+                        for dependency in task.depends_on
+                        if (wf.tasks.get(dependency["parent"]) is not None
+                            and wf.tasks[dependency["parent"]].state == "FAILED")
+                    ),
+                    None,
+                )
+                if failed_parent is None:
+                    continue
+                task.state = "FAILED"
+                task.finished_at = _now_iso()
+                wf.message = (
+                    f"task '{task.name}' blocked by failed parent "
+                    f"'{failed_parent.name}'")
+                changed = True
+
         states = [t.state for t in wf.tasks.values()]
         if all(s in ("FINISHED", "FAILED") for s in states):
             if any(s == "FAILED" for s in states):
@@ -337,7 +390,7 @@ class WorkflowController:
     # ------------------------------------------------------------------
     # Pod completion handling
     # ------------------------------------------------------------------
-    def _on_pod_event(self, pod):
+    def _on_pod_event(self, pod, event_type: str = "MODIFIED"):
         labels = (pod.metadata.labels or {})
         wf_name = labels.get(LABEL_WORKFLOW)
         task_name = labels.get(LABEL_TASK_NAME)
@@ -353,9 +406,23 @@ class WorkflowController:
             if task is None:
                 return
 
+            if event_type == "DELETED":
+                if task.state not in ("FINISHED", "FAILED"):
+                    task.state = "WAITING"
+                    task.pod_name = None
+                    task.node_name = None
+                    task.node_ip = None
+                    task.started_at = None
+                    task.finished_at = None
+                    print(f"[CTRL] Retrying interrupted task "
+                          f"'{wf.name}/{task.name}'")
+                return
+
             phase = pod.status.phase
             if pod.spec.node_name and task.node_name is None:
                 task.node_name = pod.spec.node_name
+            if getattr(pod.status, "host_ip", None) and task.node_ip is None:
+                task.node_ip = pod.status.host_ip
             if pod.status.start_time and task.started_at is None:
                 task.started_at = pod.status.start_time.isoformat()
 
@@ -473,7 +540,7 @@ class WorkflowController:
                     timeout_seconds=300,
                 )
                 for ev in stream:
-                    self._on_pod_event(ev["object"])
+                    self._on_pod_event(ev["object"], ev["type"])
             except Exception as e:
                 print(f"[CTRL] pod watch error: {e}; retrying in 5s")
                 time.sleep(5)
@@ -509,7 +576,8 @@ class WorkflowController:
 # ─────────────────────────────────────────────────────────────────────────
 def _now_iso() -> str:
     import datetime
-    return datetime.datetime.utcnow().isoformat() + "Z"
+    return datetime.datetime.now(datetime.timezone.utc).isoformat().replace(
+        "+00:00", "Z")
 
 
 def _runtime_s(t: _TaskState) -> float:
@@ -517,8 +585,10 @@ def _runtime_s(t: _TaskState) -> float:
         return 0.0
     try:
         import datetime
-        s = datetime.datetime.fromisoformat(t.started_at.rstrip("Z"))
-        f = datetime.datetime.fromisoformat(t.finished_at.rstrip("Z"))
+        s = datetime.datetime.fromisoformat(
+            t.started_at.replace("Z", "+00:00"))
+        f = datetime.datetime.fromisoformat(
+            t.finished_at.replace("Z", "+00:00"))
         return (f - s).total_seconds()
     except Exception:
         return 0.0

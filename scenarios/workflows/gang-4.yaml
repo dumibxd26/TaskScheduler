@@ -1,0 +1,11 @@
+schema_version: 1
+workflow:
+  id: gang-4
+  family: gang
+  tags: [coordination, gang, parallelism]
+  description: Four workers must reserve capacity and begin as one atomic gang.
+  tasks:
+    - &worker {id: gang-1, class: CPU_BOUND, image: bench/cpu:v1, image_size_mib: 96, startup_s: 0.2, supported_architectures: [amd64, arm64], cpu_cores: 2, memory_mib: 1024, working_set_mib: 256, compute_gflop: 180, parallel_fraction: 0.85, gang_group_id: workers}
+    - {<<: *worker, id: gang-2}
+    - {<<: *worker, id: gang-3}
+    - {<<: *worker, id: gang-4}

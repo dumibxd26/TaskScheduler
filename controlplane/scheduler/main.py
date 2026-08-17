@@ -8,7 +8,7 @@ chosen node via the Kubernetes binding subresource.
 
 The scheduler is responsible for:
   * placement decisions (ECT + UCB + thermal scoring, gang atomicity)
-  * learning from pod completions (runtime EWMAs, output sizes, transfer time)
+    * learning from pod completions and optional ``__TS_METRICS__`` records
   * tracking data placement (which node holds which output)
   * persisting ProfileStore state to a hostPath volume + ConfigMap
 
@@ -18,7 +18,9 @@ in ts-controller.
 
 from __future__ import annotations
 
+import json
 import os
+import random
 import threading
 import time
 from typing import Dict, Optional
@@ -123,6 +125,11 @@ class TsScheduler:
 
         self.core = client.CoreV1Api()
 
+        random_seed = os.environ.get("TS_RANDOM_SEED")
+        if random_seed is not None:
+            random.seed(int(random_seed))
+            print(f"[SCHED] Random seed: {random_seed}")
+
         # Internal model state.
         self.store = ProfileStore()
         self.algorithm = PlacementAlgorithm(self.store)
@@ -150,6 +157,7 @@ class TsScheduler:
             templates=self.templates,
             policy=self.policy,
             data_placement=self.data_placement,
+            preempt_task=self.preempt_pod,
         )
 
         self._cluster: Optional[ClusterScenario] = None
@@ -160,6 +168,7 @@ class TsScheduler:
         self._bound_pods: set[str] = set()
         # Map task_instance_id (== pod name) -> pod spec for binding.
         self._pending_pods: Dict[str, object] = {}
+        self._placement_context: Dict[str, Dict[str, Optional[float]]] = {}
         self._state_lock = threading.Lock()
 
         self._dirty = False  # whether profiles need persisting
@@ -258,7 +267,9 @@ class TsScheduler:
     # ------------------------------------------------------------------
     # Pod → internal model
     # ------------------------------------------------------------------
-    def _pod_to_models(self, pod) -> tuple[TaskInstance, TaskTemplate, str, PriorityClass]:
+    def _pod_to_models(
+            self, pod) -> tuple[TaskInstance, TaskTemplate, str,
+                               PriorityClass, WorkflowClass, bool]:
         annotations = pod.metadata.annotations or {}
         labels = pod.metadata.labels or {}
 
@@ -277,6 +288,12 @@ class TsScheduler:
             annotations.get("ts.scheduler/priority", "BATCH"),
             PriorityClass.BATCH,
         )
+        workflow_class = _WORKFLOW_CLASS_MAP.get(
+            annotations.get("ts.scheduler/workflow_class", "BATCH"),
+            WorkflowClass.BATCH,
+        )
+        preemptable = annotations.get(
+            "ts.scheduler/preemptable", "true").lower() == "true"
 
         compat_str = annotations.get("ts.scheduler/compatible_node_types", "")
         if compat_str:
@@ -296,6 +313,21 @@ class TsScheduler:
             workflow_instance_id=wf_id,
             task_template_id=task_template_id,
         )
+        try:
+            dependencies = json.loads(
+                annotations.get("ts.scheduler/data_dependencies", "[]"))
+            for dependency in dependencies:
+                producer = str(dependency.get("node", ""))
+                size_bytes = max(0, int(dependency.get("bytes", 0)))
+                if not producer:
+                    continue
+                if producer not in task_instance.parent_node_ids:
+                    task_instance.parent_node_ids.append(producer)
+                task_instance.input_bytes_by_node[producer] = (
+                    task_instance.input_bytes_by_node.get(producer, 0)
+                    + size_bytes)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
 
         template = TaskTemplate(
             task_template_id=task_template_id,
@@ -317,9 +349,13 @@ class TsScheduler:
         if annotations.get("ts.scheduler/checkpointable") == "true":
             template.checkpointable = True
 
-        return task_instance, template, wf_id, priority
+        return (task_instance, template, wf_id, priority, workflow_class,
+                preemptable)
 
-    def _ensure_workflow(self, wf_id: str, priority: PriorityClass) -> WorkflowInstance:
+    def _ensure_workflow(
+            self, wf_id: str, priority: PriorityClass,
+            workflow_class: WorkflowClass,
+            preemptable: bool) -> WorkflowInstance:
         """Find-or-create an in-memory WorkflowInstance for the engine."""
         wf = self.queue.admitted_workflows.get(wf_id)
         if wf is not None:
@@ -328,9 +364,9 @@ class TsScheduler:
         wf = WorkflowInstance(
             workflow_instance_id=wf_id,
             workflow_template_id=wf_id,
-            workflow_class=WorkflowClass.BATCH,
+            workflow_class=workflow_class,
             priority=priority,
-            preemptable=True,
+            preemptable=preemptable,
             task_instances={},
         )
         # Bypass the admission heap — the controller's CRD already played
@@ -349,9 +385,9 @@ class TsScheduler:
             self.templates[wf_id] = WorkflowTemplate(
                 workflow_template_id=wf_id,
                 name=wf_id,
-                workflow_class=WorkflowClass.BATCH,
+                workflow_class=workflow_class,
                 default_priority=priority,
-                default_preemptable=True,
+                default_preemptable=preemptable,
                 tasks={},
                 edges=[],
             )
@@ -366,17 +402,25 @@ class TsScheduler:
             if name in self._enqueued_pods or name in self._bound_pods:
                 return
             try:
-                task, template, wf_id, priority = self._pod_to_models(pod)
+                (task, template, wf_id, priority, workflow_class,
+                 preemptable) = self._pod_to_models(pod)
             except Exception as e:
                 print(f"[SCHED] failed to parse pod {name}: {e}")
                 return
 
-            wf = self._ensure_workflow(wf_id, priority)
+            wf = self._ensure_workflow(
+                wf_id, priority, workflow_class, preemptable)
             # Register the template into the workflow's template map so the
             # engine can find runtime/memory specs.
             self.templates[wf_id].tasks[template.task_template_id] = template
             # Add to the workflow's task list (used by readiness/gang logic).
-            if task.task_instance_id not in wf.task_instances:
+            existing = wf.task_instances.get(task.task_instance_id)
+            if existing is not None:
+                existing.task_template_id = task.task_template_id
+                existing.state = TaskState.WAITING
+                existing.assigned_node_id = None
+                task = existing
+            else:
                 wf.task_instances[task.task_instance_id] = task
 
             # Directly enqueue as ready — the controller already resolved
@@ -386,6 +430,24 @@ class TsScheduler:
             self._pending_pods[name] = pod
             print(f"[SCHED] Enqueued '{name}' "
                   f"(wf={wf_id}, class={template.task_class.name}, prio={priority.name})")
+
+    def preempt_pod(self, pod_name: str) -> bool:
+        with self._state_lock:
+            self._bound_pods.discard(pod_name)
+            self._enqueued_pods.discard(pod_name)
+            self._pending_pods.pop(pod_name, None)
+            self._placement_context.pop(pod_name, None)
+        try:
+            self.core.delete_namespaced_pod(
+                name=pod_name,
+                namespace=NAMESPACE,
+                grace_period_seconds=0,
+                body=client.V1DeleteOptions(grace_period_seconds=0),
+            )
+            return True
+        except ApiException as exc:
+            print(f"[PREEMPT ERROR] '{pod_name}': {exc.reason}")
+            return False
 
     def _watch_pods(self):
         print(f"[SCHED] Watching Pending pods with schedulerName={SCHEDULER_NAME}...")
@@ -463,61 +525,89 @@ class TsScheduler:
             pass
 
         node_type = None
+        temperature_at_end = None
         with self._cluster_lock:
             if self._cluster:
                 for n in self._cluster.nodes:
                     if n.node_id == node_name:
                         node_type = n.node_type
+                        temperature_at_end = n.cpu_temperature
+                        n.unregister_task(pod.metadata.name)
                         break
 
-        print(f"[SCHED] '{pod.metadata.name}' {pod.status.phase} on {node_name} "
-              f"(runtime={runtime:.2f}s, startup={startup:.2f}s)")
-
-        if pod.status.phase == "Succeeded" and node_type is not None:
-            task = TaskInstance(
+        context = self._placement_context.pop(pod.metadata.name, {})
+        metrics = self._read_task_metrics(pod.metadata.name)
+        output_bytes = {
+            str(field): int(size)
+            for field, size in metrics.get("output_bytes_by_field", {}).items()
+            if isinstance(size, (int, float)) and size >= 0
+        }
+        task = next(
+            (
+                workflow.task_instances[pod.metadata.name]
+                for workflow in self.queue.admitted_workflows.values()
+                if pod.metadata.name in workflow.task_instances
+            ),
+            TaskInstance(
                 task_instance_id=pod.metadata.name,
                 workflow_instance_id=wf_id,
                 task_template_id=task_template_id,
                 state=TaskState.RUNNING,
                 assigned_node_id=node_name,
-            )
+            ),
+        )
+
+        print(f"[SCHED] '{pod.metadata.name}' {pod.status.phase} on {node_name} "
+              f"(runtime={runtime:.2f}s, startup={startup:.2f}s)")
+
+        if pod.status.phase == "Succeeded" and node_type is not None:
             self.observer.record_task_completion(
                 task=task,
                 actual_runtime=runtime,
                 actual_startup=startup,
                 node_id=node_name,
                 node_type=node_type,
+                node_cpu_at_start=context.get("cpu_usage_ratio", 0.0),
+                node_memory_at_start=context.get("memory_usage_ratio", 0.0),
+                temperature_at_start=context.get("cpu_temperature"),
+                temperature_at_end=temperature_at_end,
+                io_bytes_read=int(metrics.get("io_bytes_read", 0)),
+                io_bytes_written=int(metrics.get("io_bytes_written", 0)),
+                output_bytes_by_field=output_bytes,
+                transfer_seconds=float(metrics.get("transfer_seconds", 0.0)),
             )
-            # Record data placement: assume each declared output field lives
-            # on the producer's node. We don't know exact bytes here without
-            # scraping logs; use the template hint if available.
             self._record_data_placement(wf_id, task_name, node_name,
-                                        pod.metadata.name)
+                                        pod.metadata.name, output_bytes)
             self._dirty = True
         elif pod.status.phase == "Failed":
-            task = TaskInstance(
-                task_instance_id=pod.metadata.name,
-                workflow_instance_id=wf_id,
-                task_template_id=task_template_id,
-                state=TaskState.RUNNING,
-                assigned_node_id=node_name,
-            )
             self.observer.record_task_failure(
                 task=task, node_id=node_name, node_type=node_type,
             )
             self._dirty = True
 
-    def _record_data_placement(self, wf_id: str, task_name: str,
-                               node_name: str, pod_name: str):
-        # We don't have per-field sizes here; we just remember the producer
-        # node for the task. Children that need bulk fetch can curl from
-        # http://<node>:8080/<wf_id>/<pod_name>/.
+    def _read_task_metrics(self, pod_name: str) -> dict:
         try:
-            self.data_placement.record_output(
-                wfid=wf_id, task_id=task_name,
-                field_name="__bulk__",
-                node_id=node_name, size_bytes=0,
-            )
+            log = self.core.read_namespaced_pod_log(
+                name=pod_name, namespace=NAMESPACE)
+            for line in reversed(log.splitlines()):
+                if line.startswith("__TS_METRICS__="):
+                    payload = json.loads(line[len("__TS_METRICS__="):])
+                    return payload if isinstance(payload, dict) else {}
+        except Exception as exc:
+            print(f"[SCHED] metrics unavailable for {pod_name}: {exc}")
+        return {}
+
+    def _record_data_placement(self, wf_id: str, task_name: str,
+                               node_name: str, pod_name: str,
+                               output_bytes: Dict[str, int]):
+        try:
+            fields = output_bytes or {"__bulk__": 0}
+            for field_name, size_bytes in fields.items():
+                self.data_placement.record_output(
+                    wfid=wf_id, task_id=task_name,
+                    field_name=field_name,
+                    node_id=node_name, size_bytes=size_bytes,
+                )
         except Exception:
             pass
 
@@ -525,6 +615,19 @@ class TsScheduler:
     # Bind — pull dispatch decisions out of the engine and apply to K8s
     # ------------------------------------------------------------------
     def bind_pod(self, pod_name: str, node_name: str):
+        context: Dict[str, Optional[float]] = {}
+        with self._cluster_lock:
+            if self._cluster:
+                node = next(
+                    (item for item in self._cluster.nodes if item.node_id == node_name),
+                    None,
+                )
+                if node is not None:
+                    context = {
+                        "cpu_usage_ratio": node.cpu_usage_ratio,
+                        "memory_usage_ratio": node.memory_usage_ratio,
+                        "cpu_temperature": node.cpu_temperature,
+                    }
         target = client.V1ObjectReference(api_version="v1", kind="Node",
                                            name=node_name)
         meta = client.V1ObjectMeta(name=pod_name)
@@ -535,6 +638,7 @@ class TsScheduler:
                 name=pod_name, namespace=NAMESPACE, body=body,
                 _preload_content=False,
             )
+            self._placement_context[pod_name] = context
             print(f"[BIND] '{pod_name}' -> '{node_name}'")
         except ApiException as e:
             print(f"[BIND ERROR] '{pod_name}': {e.reason}")

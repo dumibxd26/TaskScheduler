@@ -23,11 +23,17 @@ spec:
         app.kubernetes.io/component: control-plane
     spec:
       serviceAccountName: ts-controller
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       containers:
         - name: controller
           image: ts-control-plane:v1
           imagePullPolicy: IfNotPresent
-          command: ["python3", "-m", "cmd.controller.main"]
+          command: ["python3", "-m", "controlplane.controller.main"]
           env:
             - name: TS_NAMESPACE
               value: default

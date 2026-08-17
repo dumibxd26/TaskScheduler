@@ -1,0 +1,13 @@
+schema_version: 1
+workflow:
+  id: memory-heavy-6
+  family: memory-heavy
+  tags: [resource, memory, bandwidth]
+  description: Six independent streaming tasks contend for DRAM capacity and bandwidth.
+  tasks:
+    - &stream {id: memory-1, class: MEMORY_BOUND, image: bench/memory:v1, image_size_mib: 80, startup_s: 0.15, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 3072, working_set_mib: 2560, compute_gflop: 24, memory_read_mib: 48000, memory_write_mib: 16000}
+    - {<<: *stream, id: memory-2}
+    - {<<: *stream, id: memory-3}
+    - {<<: *stream, id: memory-4}
+    - {<<: *stream, id: memory-5}
+    - {<<: *stream, id: memory-6}

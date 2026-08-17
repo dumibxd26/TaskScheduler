@@ -1,0 +1,331 @@
+{
+  "case_count": 3750,
+  "cluster_family_recommendations": {
+    "asymmetric-network": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "adaptive",
+        "adaptive-no-preempt",
+        "heft"
+      ],
+      "tie": true
+    },
+    "balanced-heterogeneous": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "adaptive",
+        "adaptive-no-preempt"
+      ],
+      "tie": true
+    },
+    "homogeneous": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "legacy"
+      ],
+      "tie": true
+    },
+    "local-calibration": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "adaptive",
+        "adaptive-no-preempt",
+        "eft",
+        "heft",
+        "legacy",
+        "legacy-tuned",
+        "legacy-v1"
+      ],
+      "tie": true
+    },
+    "unreliable-thermal": {
+      "median_regret": 0.0,
+      "p95_regret": 0.57198306959989,
+      "policies": [
+        "eft",
+        "heft",
+        "legacy"
+      ],
+      "tie": true
+    }
+  },
+  "ranking": [
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.836,
+      "mean_regret": 0.01690208753653263,
+      "mean_regret_ci95": [
+        0.014045637878167986,
+        0.019831607629628843
+      ],
+      "median_bound_ratio": 1.1730955646038483,
+      "median_regret": 0.0,
+      "p95_regret": 0.05750447573829298,
+      "policy": "heft",
+      "win_rate": 0.9197333333333333,
+      "wins": 3449
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.836,
+      "mean_regret": 0.018499576251457102,
+      "mean_regret_ci95": [
+        0.01576140391656691,
+        0.02146237914959685
+      ],
+      "median_bound_ratio": 1.1730955646038483,
+      "median_regret": 0.0,
+      "p95_regret": 0.10050659441409926,
+      "policy": "eft",
+      "win_rate": 0.9197333333333333,
+      "wins": 3449
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.836,
+      "mean_regret": 0.02503887507837037,
+      "mean_regret_ci95": [
+        0.021695515276863298,
+        0.028386199277135572
+      ],
+      "median_bound_ratio": 1.1730955646038483,
+      "median_regret": 0.0,
+      "p95_regret": 0.1773161293576282,
+      "policy": "legacy",
+      "win_rate": 0.9189333333333334,
+      "wins": 3446
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.836,
+      "mean_regret": 0.06973184265302046,
+      "mean_regret_ci95": [
+        0.06140482400408359,
+        0.07791516188187704
+      ],
+      "median_bound_ratio": 1.1807719328251631,
+      "median_regret": 0.0,
+      "p95_regret": 0.5468274981076044,
+      "policy": "legacy-tuned",
+      "win_rate": 0.8386666666666667,
+      "wins": 3145
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.836,
+      "mean_regret": 0.049591889176198084,
+      "mean_regret_ci95": [
+        0.04416046975802569,
+        0.0553281842621286
+      ],
+      "median_bound_ratio": 1.1807719328251631,
+      "median_regret": 0.0,
+      "p95_regret": 0.5514119428125099,
+      "policy": "adaptive",
+      "win_rate": 0.8661333333333333,
+      "wins": 3248
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.836,
+      "mean_regret": 0.049591889176198084,
+      "mean_regret_ci95": [
+        0.04416046975802569,
+        0.0553281842621286
+      ],
+      "median_bound_ratio": 1.1807719328251631,
+      "median_regret": 0.0,
+      "p95_regret": 0.5514119428125099,
+      "policy": "adaptive-no-preempt",
+      "win_rate": 0.8661333333333333,
+      "wins": 3248
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.836,
+      "mean_regret": 0.13068462263472508,
+      "mean_regret_ci95": [
+        0.1188314807505773,
+        0.14168077098796902
+      ],
+      "median_bound_ratio": 1.18883152502238,
+      "median_regret": 0.0,
+      "p95_regret": 0.8431980850801877,
+      "policy": "legacy-v1",
+      "win_rate": 0.7453333333333333,
+      "wins": 2795
+    }
+  ],
+  "record_count": 26250,
+  "reference_results": [],
+  "workflow_family_recommendations": {
+    "cache-sensitive": {
+      "median_regret": 0.0,
+      "p95_regret": 0.05750447573829298,
+      "policies": [
+        "heft"
+      ],
+      "tie": false
+    },
+    "cpu-heavy": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "adaptive",
+        "adaptive-no-preempt",
+        "eft",
+        "heft",
+        "legacy"
+      ],
+      "tie": true
+    },
+    "data-heavy": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "legacy",
+        "legacy-tuned",
+        "legacy-v1"
+      ],
+      "tie": true
+    },
+    "deep": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "legacy",
+        "legacy-tuned",
+        "legacy-v1"
+      ],
+      "tie": true
+    },
+    "diamond": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "adaptive",
+        "adaptive-no-preempt",
+        "legacy-tuned"
+      ],
+      "tie": true
+    },
+    "failure-recovery": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "adaptive",
+        "adaptive-no-preempt",
+        "eft",
+        "heft",
+        "legacy",
+        "legacy-tuned",
+        "legacy-v1"
+      ],
+      "tie": true
+    },
+    "fan-in": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "legacy"
+      ],
+      "tie": true
+    },
+    "fan-out": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "adaptive",
+        "adaptive-no-preempt"
+      ],
+      "tie": true
+    },
+    "gang": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "adaptive",
+        "adaptive-no-preempt",
+        "eft",
+        "heft",
+        "legacy"
+      ],
+      "tie": true
+    },
+    "io-heavy": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "legacy"
+      ],
+      "tie": true
+    },
+    "linear": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "legacy",
+        "legacy-tuned",
+        "legacy-v1"
+      ],
+      "tie": true
+    },
+    "memory-heavy": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "legacy"
+      ],
+      "tie": true
+    },
+    "mixed": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "adaptive",
+        "adaptive-no-preempt"
+      ],
+      "tie": true
+    },
+    "priority": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "legacy",
+        "legacy-v1"
+      ],
+      "tie": true
+    },
+    "wide": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "legacy",
+        "legacy-tuned",
+        "legacy-v1"
+      ],
+      "tie": true
+    }
+  }
+}

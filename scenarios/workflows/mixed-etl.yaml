@@ -1,0 +1,18 @@
+schema_version: 1
+workflow:
+  id: mixed-etl
+  family: mixed
+  tags: [resource, etl, fork-join]
+  description: Storage ingest fans into CPU and memory transforms before a mixed export.
+  tasks:
+    - {id: ingest, class: IO_BOUND, image: bench/io:v1, image_size_mib: 72, startup_s: 0.2, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 1024, disk_read_mib: 8000, random_io_fraction: 0.15}
+    - {id: parse, class: CPU_BOUND, image: bench/cpu:v1, image_size_mib: 96, startup_s: 0.15, supported_architectures: [amd64, arm64], cpu_cores: 2, memory_mib: 1536, working_set_mib: 512, compute_gflop: 240, memory_read_mib: 2000, parallel_fraction: 0.85}
+    - {id: enrich, class: MEMORY_BOUND, image: bench/memory:v1, image_size_mib: 80, startup_s: 0.15, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 3072, working_set_mib: 2400, compute_gflop: 40, memory_read_mib: 24000, memory_write_mib: 8000}
+    - {id: aggregate, class: CPU_BOUND, image: bench/cpu:v1, image_size_mib: 96, startup_s: 0.15, supported_architectures: [amd64, arm64], cpu_cores: 2, memory_mib: 2048, working_set_mib: 1024, compute_gflop: 320, memory_read_mib: 6000, parallel_fraction: 0.9}
+    - {id: export, class: IO_BOUND, image: bench/mixed:v1, image_size_mib: 110, startup_s: 0.2, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 1024, disk_write_mib: 6000, random_io_fraction: 0.2}
+  dependencies:
+    - {parent: ingest, child: parse, data_mib: 1024}
+    - {parent: ingest, child: enrich, data_mib: 1024}
+    - {parent: parse, child: aggregate, data_mib: 512}
+    - {parent: enrich, child: aggregate, data_mib: 1024}
+    - {parent: aggregate, child: export, data_mib: 768}

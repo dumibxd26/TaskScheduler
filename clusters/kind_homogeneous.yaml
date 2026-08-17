@@ -1,0 +1,50 @@
+# Single-host validation topology approximating the homogeneous simulator family.
+# Every worker has the same advertised and enforced capacity. CPU_OPT is used
+# as the common node label because all experiment TaskTemplates support it.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: ts-cluster
+nodes:
+  - role: control-plane
+
+  - role: worker
+    labels:
+      node-type: CPU_OPT
+      ts.capacity/cpu: "1.25"
+      ts.capacity/memory: "1280"
+      ts.capacity/io: "300"
+      ts.io/cooling-class: STANDARD
+      ts.io/thermal-throttle-c: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-equal-1
+
+  - role: worker
+    labels:
+      node-type: CPU_OPT
+      ts.capacity/cpu: "1.25"
+      ts.capacity/memory: "1280"
+      ts.capacity/io: "300"
+      ts.io/cooling-class: STANDARD
+      ts.io/thermal-throttle-c: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-equal-2
+
+  - role: worker
+    labels:
+      node-type: CPU_OPT
+      ts.capacity/cpu: "1.25"
+      ts.capacity/memory: "1280"
+      ts.capacity/io: "300"
+      ts.io/cooling-class: STANDARD
+      ts.io/thermal-throttle-c: "100"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          name: ts-node-equal-3

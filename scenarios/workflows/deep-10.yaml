@@ -1,0 +1,27 @@
+schema_version: 1
+workflow:
+  id: deep-10
+  family: deep
+  tags: [topology, critical-path]
+  description: Ten lightweight stages exposing critical-path placement costs.
+  tasks:
+    - &stage {id: d1, class: CPU_BOUND, image: bench/cpu:v1, image_size_mib: 96, startup_s: 0.1, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 384, working_set_mib: 96, compute_gflop: 18}
+    - {<<: *stage, id: d2}
+    - {<<: *stage, id: d3}
+    - {<<: *stage, id: d4}
+    - {<<: *stage, id: d5}
+    - {<<: *stage, id: d6}
+    - {<<: *stage, id: d7}
+    - {<<: *stage, id: d8}
+    - {<<: *stage, id: d9}
+    - {<<: *stage, id: d10}
+  dependencies:
+    - {parent: d1, child: d2, data_mib: 16}
+    - {parent: d2, child: d3, data_mib: 16}
+    - {parent: d3, child: d4, data_mib: 16}
+    - {parent: d4, child: d5, data_mib: 16}
+    - {parent: d5, child: d6, data_mib: 16}
+    - {parent: d6, child: d7, data_mib: 16}
+    - {parent: d7, child: d8, data_mib: 16}
+    - {parent: d8, child: d9, data_mib: 16}
+    - {parent: d9, child: d10, data_mib: 16}

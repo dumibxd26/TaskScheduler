@@ -45,3 +45,12 @@ output = {
     "bytes_written": 100 * 1024 * 1024,
 }
 print(f"__TS_OUTPUT__={json.dumps(output)}")
+metrics = {
+    "io_bytes_read": 100 * 1024 * 1024,
+    "io_bytes_written": 100 * 1024 * 1024,
+    "output_bytes_by_field": {
+        "generated_file_path": 100 * 1024 * 1024,
+    },
+    "transfer_seconds": 0.0,
+}
+print(f"__TS_METRICS__={json.dumps(metrics)}")

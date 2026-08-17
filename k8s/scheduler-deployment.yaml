@@ -23,11 +23,17 @@ spec:
         app.kubernetes.io/component: control-plane
     spec:
       serviceAccountName: ts-scheduler
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       containers:
         - name: scheduler
           image: ts-control-plane:v1
           imagePullPolicy: IfNotPresent
-          command: ["python3", "-m", "cmd.scheduler.main"]
+          command: ["python3", "-m", "controlplane.scheduler.main"]
           env:
             - name: TS_POLICY
               value: adaptive
@@ -39,6 +45,8 @@ spec:
               value: ts-scheduler-profiles
             - name: TS_TICK_INTERVAL_S
               value: "1.0"
+            - name: TS_RANDOM_SEED
+              value: "0"
           resources:
             requests:
               cpu: "100m"

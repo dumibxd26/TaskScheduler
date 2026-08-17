@@ -1,7 +1,16 @@
-# TaskScheduler — productization layout
+# TaskScheduler Architecture
 
-This file documents the architecture introduced by the productization
-refactor. It complements the original `README.md` (simulation-focused).
+TaskScheduler has two execution surfaces: an independent deterministic
+discrete-event simulator under `simulation/`, and a Kubernetes control plane
+under `controlplane/`. They share selected models but not a policy engine or
+identical algorithms. Simulation is the controlled comparative surface; Kind
+is the end-to-end integration and descriptive live surface.
+
+> **Validation boundary:** live experiments use one physical Windows/Docker
+> host with three Kind worker containers. Balanced, homogeneous, and skewed
+> profiles are logical capacity configurations on that host, not three
+> physical clusters. The two-host k3s procedure below remains a pending
+> deployment target, not completed evidence.
 
 ## Components
 
@@ -11,8 +20,8 @@ refactor. It complements the original `README.md` (simulation-focused).
 └────────────────────────────────┬─────────────────────────────────────┘
                                  │
                   ┌──────────────▼──────────────┐
-                  │     ts-controller (1×)      │  Deployment
-                  │  Watches Workflow CRDs.     │  cmd/controller/main.py
+                  │     ts-controller (1x)      │  Deployment
+                  │  Watches Workflow CRDs.     │  controlplane/controller
                   │  DAG → Pods (schedulerName  │
                   │  = ts-scheduler). Scrapes   │
                   │  __TS_OUTPUT__= from logs   │
@@ -21,12 +30,12 @@ refactor. It complements the original `README.md` (simulation-focused).
                   └──────────────┬──────────────┘
                                  │ (creates Pods)
                   ┌──────────────▼──────────────┐
-                  │     ts-scheduler (1×)       │  Deployment
-                  │  Watches Pending Pods,      │  cmd/scheduler/main.py
-                  │  drives SchedulerEngine ▷   │
-                  │  AdaptivePolicy (ECT + UCB  │
-                  │  + thermal + failure).      │
-                  │  Binds pod → node.          │
+                  │     ts-scheduler (1x)       │  Deployment
+                  │  Watches Pending Pods,      │  controlplane/scheduler
+                  │  invokes Legacy v1/tuned    │
+                  │  or Adaptive policy,        │
+                  │  policy, applies victim     │
+                  │  deletion, binds Pod->node. │
                   └──────┬───────────────┬──────┘
                          │               │
         ┌────────────────┘               └─────────────────┐
@@ -43,6 +52,15 @@ refactor. It complements the original `README.md` (simulation-focused).
 └────────────────────┘
 ```
 
+The container entry modules are `controlplane/controller/main.py` and
+`controlplane/scheduler/main.py`. The controller owns DAG progression,
+retry, output metadata, and terminal status. The scheduler owns ready-Pod
+ordering, placement, binding, profile updates, and preemption actions.
+
+The controller sees the complete Workflow CRD. The current scheduler adapter
+constructs scheduler-side workflow templates with no future edges, so live
+Adaptive does not execute full-DAG HEFT upward ranking.
+
 ## Install — single-host (kind)
 
 ```sh
@@ -54,15 +72,42 @@ Or step-by-step:
 
 ```sh
 make cluster              # ./setup_cluster.sh small  (kind, 3 workers)
-make images load install  # build, kind-load, kubectl apply -k manifests/
+make images load install  # build, kind-load, kubectl apply -k .
 make examples             # tasktemplates + linear-pipeline-1
 kubectl get workflows -w
 ```
 
-## Install — two-host k3s LAN cluster (real deployment)
+`setup_cluster.sh` accepts `small`, `homogeneous`, `skewed`, and `big`.
+The reproducible low-footprint validation matrix is:
 
-For testing with real cross-machine networking, thermals, and bandwidth
-measurements. This is what the algorithm is designed for.
+```powershell
+& .\scripts\run-kind-topology-matrix.ps1 `
+  -Profiles small,homogeneous,skewed `
+  -Repetitions 3 `
+  -Seed 2026
+python analyze_kind_topologies.py
+```
+
+The retained matrix passed the strict analyzer: 27 trials, 135 completed
+workflows, and 540 successful final task records, with no final task failures,
+scheduler errors, collection errors, or container restarts. Tuned Legacy has a
+lower makespan than v1 in all three logical profiles and by 3.50% in aggregate.
+Adaptive lowers median workflow response by 19.40% relative to tuned Legacy,
+but raises makespan by 14.80% with 44 real kill/restart preemptions. These are
+same-host integration results, not physical distributed-cluster evidence.
+
+The live scorer names are `legacy-v1`, `legacy-tuned`, and `adaptive`;
+`legacy` is a compatibility alias for v1. Exact Legacy variants share the
+same scorer, profile learning, coverage, and exploration and differ only in
+their eight weights.
+
+## Planned two-host k3s LAN deployment
+
+This section is the intended procedure for future physical cross-machine
+network, thermal, and bandwidth validation. Scripts and Make targets exist,
+but the retained evaluation did not execute this topology. Commands and
+expected observations below must be revalidated on the target machines before
+being cited as results.
 
 ### Topology
 
@@ -179,7 +224,7 @@ kubectl apply -f examples/linear-3task.yaml
 kubectl get workflows -w
 ```
 
-### Verify it's real (not simulated)
+### Proposed physical-validation checks
 
 Quick automated check (recommended):
 
@@ -196,13 +241,11 @@ kubectl get pods -l ts.io/workflow=linear-pipeline-1 -o wide
 # Tasks should be distributed across ts-master (pc1) and the
 # ts-node-* workers (pc2).
 
-# Real LAN bandwidth (from ts-bw-probe):
-kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}={.metadata.annotations.ts\.io/bw-to-ts-node-mem-1}{"\n"}{end}'
-# Should show ~100 MB/s on gigabit LAN.
+# Cross-node bandwidth signal (from ts-bw-probe):
+kubectl get nodes -o yaml | grep 'ts.io/bw-from-'
 
-# Real CPU temperatures (from ts-thermal):
+# Thermal signal (real only when exposed by the host/kernel):
 kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}={.metadata.annotations.ts\.io/cpu-temp-c}{"\n"}{end}'
-# pc1 nodes: ~40–70 °C (sysfs). pc2 Mac mini VM: load-avg fallback.
 ```
 
 ### Teardown
@@ -212,7 +255,7 @@ kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}={.metadata.anno
 make k3s-uninstall
 ```
 
-## Data plane (Phase 1)
+## Producer-local data plane
 
 Producer-local:
 - Each node mounts `/var/lib/ts-data` (hostPath).
@@ -225,24 +268,31 @@ Producer-local:
   node. Same-node parents are simply readable through the shared host
   mount (no fetch needed).
 
-## Telemetry (Phases 2 & 5)
+## Telemetry
 
 - `ts-bw-probe` curls the 100 MB `_probe.bin` from every peer's
-  fileserver every 10 min and writes `ts.io/bw-to-<peer>=<MB/s>` onto
+  fileserver and writes `ts.io/bw-from-<peer>=<MB/s>` onto
   its own Node. `services/bandwidth.py` reads these to refine ECT.
 - `ts-thermal` reads `/sys/class/thermal/thermal_zone0/temp` (with a
   load-avg fallback for hosts without sysfs thermals) every 30 s and
   writes `ts.io/cpu-temp-c` onto its Node.
 
-## Backwards compatibility
+## Simulation and legacy entry points
 
-The simulation path is unchanged:
+The definitive simulator and test entry points are:
 
 ```sh
-python3 run_simulation.py
-python3 test_simulation.py   # 25/25 should still pass
+python run_experiment_lab.py --help
+python tune_legacy_weights.py --help
+python analyze_final_evidence.py
+python -m pytest
 ```
 
-`k8s_scheduler.py` and `submit_workflows.py` are kept for reference but
-will be removed once the controller+scheduler split is validated
-end-to-end on the kind cluster.
+Simulation has nine policies. Historical simulator `legacy` is an EFT-based
+approximation retained for comparison; only `legacy-v1` and `legacy-tuned`
+run the exact live eight-factor scorer in deterministic virtual time.
+
+`run_simulation.py`, `k8s_scheduler.py`, `k8s_main.py`, and
+`submit_workflows.py` are older development/demo paths retained for
+compatibility. The validated live path is the controller/scheduler split
+installed by the root `kustomization.yaml`.

@@ -1,0 +1,16 @@
+schema_version: 1
+workflow:
+  id: critical-deadline
+  family: priority
+  tags: [priority, deadline, latency]
+  description: A short critical chain with a deadline for admission and lateness metrics.
+  priority: CRITICAL
+  preemptable: false
+  deadline_s: 12
+  tasks:
+    - {id: prepare, class: IO_BOUND, image: bench/io:v1, image_size_mib: 72, startup_s: 0.15, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 512, disk_read_mib: 1000}
+    - {id: analyze, class: CPU_BOUND, image: bench/cpu:v1, image_size_mib: 96, startup_s: 0.15, supported_architectures: [amd64, arm64], cpu_cores: 2, memory_mib: 1024, working_set_mib: 384, compute_gflop: 180, parallel_fraction: 0.9}
+    - {id: publish, class: IO_BOUND, image: bench/mixed:v1, image_size_mib: 110, startup_s: 0.15, supported_architectures: [amd64, arm64], cpu_cores: 1, memory_mib: 512, disk_write_mib: 500}
+  dependencies:
+    - {parent: prepare, child: analyze, data_mib: 128}
+    - {parent: analyze, child: publish, data_mib: 64}

@@ -1,0 +1,130 @@
+{
+  "closed-exploratory-s0-19": {
+    "old_records": 18300,
+    "new_records": 18300,
+    "missing_keys": 0,
+    "extra_keys": 0,
+    "exact_records": 18300,
+    "equivalent_records": 18300,
+    "max_absolute_numeric_difference": 0.0,
+    "examples": [],
+    "complete_equivalent": true
+  },
+  "workload-exploratory-s0-19": {
+    "old_records": 4800,
+    "new_records": 4800,
+    "missing_keys": 0,
+    "extra_keys": 0,
+    "exact_records": 4800,
+    "equivalent_records": 4800,
+    "max_absolute_numeric_difference": 0.0,
+    "examples": [],
+    "complete_equivalent": true
+  },
+  "closed-confirmatory-s200-249": {
+    "old_records": 37500,
+    "new_records": 37500,
+    "missing_keys": 0,
+    "extra_keys": 0,
+    "exact_records": 37500,
+    "equivalent_records": 37500,
+    "max_absolute_numeric_difference": 0.0,
+    "examples": [],
+    "complete_equivalent": true
+  },
+  "workload-confirmatory-s200-249": {
+    "old_records": 10000,
+    "new_records": 10000,
+    "missing_keys": 0,
+    "extra_keys": 0,
+    "exact_records": 10000,
+    "equivalent_records": 10000,
+    "max_absolute_numeric_difference": 0.0,
+    "examples": [],
+    "complete_equivalent": true
+  },
+  "closed-holdout-s400-449": {
+    "old_records": 37500,
+    "new_records": 37500,
+    "missing_keys": 0,
+    "extra_keys": 0,
+    "exact_records": 37500,
+    "equivalent_records": 37500,
+    "max_absolute_numeric_difference": 0.0,
+    "examples": [],
+    "complete_equivalent": true
+  },
+  "workload-holdout-s400-449": {
+    "old_records": 10000,
+    "new_records": 10000,
+    "missing_keys": 0,
+    "extra_keys": 0,
+    "exact_records": 10000,
+    "equivalent_records": 10000,
+    "max_absolute_numeric_difference": 0.0,
+    "examples": [],
+    "complete_equivalent": true
+  },
+  "closed-holdout2-s600-649": {
+    "old_records": 37500,
+    "new_records": 37500,
+    "missing_keys": 0,
+    "extra_keys": 0,
+    "exact_records": 37500,
+    "equivalent_records": 37500,
+    "max_absolute_numeric_difference": 0.0,
+    "examples": [],
+    "complete_equivalent": true
+  },
+  "workload-holdout2-s600-649": {
+    "old_records": 10000,
+    "new_records": 10000,
+    "missing_keys": 0,
+    "extra_keys": 0,
+    "exact_records": 10000,
+    "equivalent_records": 10000,
+    "max_absolute_numeric_difference": 0.0,
+    "examples": [],
+    "complete_equivalent": true
+  },
+  "mechanism-studies": {
+    "scalar_values": 374,
+    "exact_differences": 0,
+    "outside_tolerance": 0,
+    "structural_differences": 0,
+    "max_absolute_numeric_difference": 0.0,
+    "examples": []
+  },
+  "legacy-weight-search": {
+    "scalar_values": 6132,
+    "exact_differences": 0,
+    "outside_tolerance": 0,
+    "structural_differences": 0,
+    "max_absolute_numeric_difference": 0.0,
+    "examples": []
+  },
+  "legacy-factor-ablation": {
+    "scalar_values": 248,
+    "exact_differences": 0,
+    "outside_tolerance": 0,
+    "structural_differences": 0,
+    "max_absolute_numeric_difference": 0.0,
+    "examples": []
+  },
+  "legacy-factor-stress": {
+    "scalar_values": 128,
+    "exact_differences": 0,
+    "outside_tolerance": 0,
+    "structural_differences": 0,
+    "max_absolute_numeric_difference": 0.0,
+    "examples": []
+  },
+  "contextual-policy-search": {
+    "scalar_values": 2023,
+    "exact_differences": 0,
+    "outside_tolerance": 0,
+    "structural_differences": 0,
+    "max_absolute_numeric_difference": 0.0,
+    "examples": []
+  }
+}

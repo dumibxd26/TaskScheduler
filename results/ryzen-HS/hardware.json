@@ -1,0 +1,61 @@
+{
+  "recorded_at": "2026-11-01T12:26:30.9139338Z",
+  "cpu": [
+    {
+      "Name": "AMD Ryzen 7 PRO 8840HS w/ Radeon 780M Graphics ",
+      "NumberOfCores": 8,
+      "NumberOfLogicalProcessors": 16,
+      "MaxClockSpeed": 3301,
+      "L2CacheSize": 8192,
+      "L3CacheSize": 16384
+    }
+  ],
+  "memory": [
+    {
+      "Capacity": 34359738368,
+      "Speed": 5600,
+      "ConfiguredClockSpeed": 5600
+    },
+    {
+      "Capacity": 34359738368,
+      "Speed": 5600,
+      "ConfiguredClockSpeed": 5600
+    }
+  ],
+  "system": {
+    "TotalPhysicalMemory": 66334355456
+  },
+  "os": {
+    "Caption": "Microsoft Windows 11 Enterprise",
+    "Version": "10.0.26300",
+    "BuildNumber": "26300",
+    "FreePhysicalMemory": 40165944
+  },
+  "disks": [
+    {
+      "Model": "SK hynix PC801 HFS002TEJ9X101N",
+      "Size": 2048407280640,
+      "MediaType": "Fixed hard disk media"
+    }
+  ],
+  "docker": {
+    "version": "29.9.2",
+    "cpus": 16,
+    "memory_bytes": 32478212096,
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "cgroup_version": "2",
+    "storage_driver": "overlayfs"
+  },
+  "python": "Python 3.13.16",
+  "kind": "kind v0.31.0 go1.25.5 windows/amd64",
+  "kubectl": "v1.36.1",
+  "power_scheme": "Power Scheme GUID: fb5220ff-7e1a-47aa-9a42-50ffbf45c673  (HP Optimized (Modern Standby))",
+  "source_commit": "0f4d50bf1c0e1bacbbe4a79691574e58eff264ee",
+  "baseline_tests": {
+    "command": ".venv\\Scripts\\python.exe -m pytest -q tests test_simulation.py --import-mode=importlib",
+    "exit_code": 0,
+    "passed": 210,
+    "wall_seconds": 13.68
+  },
+  "original_test_collection_error": "Untracked send copy shadowed engine and test_simulation modules; explicit repository test selection with importlib passed."
+}

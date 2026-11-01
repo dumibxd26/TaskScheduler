@@ -1,0 +1,132 @@
+schema_version: 1
+host:
+  model: Intel Core i5-8300H (4 cores / 8 threads), 12 GB RAM, Docker Desktop WSL2
+  agent_cpus: 0.35
+  agent_memory_mib: 576
+  task_memory_mib: 224
+cluster_name: ts-pc-8840hs-20261101
+profiles:
+  balanced:
+    mirrors: balanced-heterogeneous-4
+    description: Complementary CPU-, memory-, and I/O-optimised workers plus a slow
+      edge worker behind a constrained link.
+    workers:
+    - name: ts-node-cpu
+      node_type: CPU_OPT
+      slots: 2
+      speed:
+        cpu: 1.0
+        memory: 0.55
+        io: 0.5
+      network:
+        delay_ms: 2
+        rate_mbit: 800
+    - name: ts-node-mem
+      node_type: MEM_OPT
+      slots: 2
+      speed:
+        cpu: 0.45
+        memory: 1.0
+        io: 0.55
+      network:
+        delay_ms: 2
+        rate_mbit: 800
+    - name: ts-node-io
+      node_type: IO_OPT
+      slots: 1
+      speed:
+        cpu: 0.4
+        memory: 0.5
+        io: 1.0
+      network:
+        delay_ms: 2
+        rate_mbit: 800
+    - name: ts-node-edge
+      node_type: GENERAL
+      slots: 1
+      speed:
+        cpu: 0.3
+        memory: 0.3
+        io: 0.3
+      network:
+        delay_ms: 10
+        rate_mbit: 60
+  homogeneous:
+    mirrors: homogeneous-4
+    description: Three equivalent workers behind equal links (control profile).
+    workers:
+    - name: ts-node-equal-1
+      node_type: GENERAL
+      slots: 2
+      speed:
+        cpu: 1.0
+        memory: 1.0
+        io: 1.0
+      network:
+        delay_ms: 4
+        rate_mbit: 400
+    - name: ts-node-equal-2
+      node_type: GENERAL
+      slots: 2
+      speed:
+        cpu: 1.0
+        memory: 1.0
+        io: 1.0
+      network:
+        delay_ms: 4
+        rate_mbit: 400
+    - name: ts-node-equal-3
+      node_type: GENERAL
+      slots: 2
+      speed:
+        cpu: 1.0
+        memory: 1.0
+        io: 1.0
+      network:
+        delay_ms: 4
+        rate_mbit: 400
+  edge:
+    mirrors: asymmetric-edge-5
+    description: Two fast core workers on a fast link and two slow edge workers behind
+      high-latency, low-rate links.
+    workers:
+    - name: ts-node-core-1
+      node_type: CPU_OPT
+      slots: 2
+      speed:
+        cpu: 1.0
+        memory: 1.0
+        io: 1.0
+      network:
+        delay_ms: 1
+        rate_mbit: 1000
+    - name: ts-node-core-2
+      node_type: CPU_OPT
+      slots: 2
+      speed:
+        cpu: 1.0
+        memory: 1.0
+        io: 1.0
+      network:
+        delay_ms: 1
+        rate_mbit: 1000
+    - name: ts-node-edge-1
+      node_type: GENERAL
+      slots: 1
+      speed:
+        cpu: 0.35
+        memory: 0.35
+        io: 0.35
+      network:
+        delay_ms: 15
+        rate_mbit: 40
+    - name: ts-node-edge-2
+      node_type: GENERAL
+      slots: 1
+      speed:
+        cpu: 0.35
+        memory: 0.35
+        io: 0.35
+      network:
+        delay_ms: 15
+        rate_mbit: 40

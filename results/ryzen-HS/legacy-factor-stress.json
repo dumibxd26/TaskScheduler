@@ -1,0 +1,176 @@
+{
+  "all_factors_change_choice": true,
+  "method": "Controlled one-factor intervention. Each ablated vector equals the tuned vector except that the named factor is set to zero.",
+  "schema_version": 1,
+  "stresses": {
+    "failure_penalty": {
+      "ablated_choice": "risky",
+      "ablated_scores": {
+        "healthy": {
+          "availability": 6.140552511166027,
+          "data_locality": 0.0,
+          "failure_penalty": 0.0,
+          "load_balance": 6.916622266503629,
+          "memory_pressure": 0.0,
+          "resource_fit": 11.506775072408617,
+          "total": 48.22636885288894,
+          "type_affinity": 23.662419002810662,
+          "warm_image": 0.0
+        },
+        "risky": {
+          "availability": 6.140552511166027,
+          "data_locality": 0.0,
+          "failure_penalty": 0.0,
+          "load_balance": 6.916622266503629,
+          "memory_pressure": 0.0,
+          "resource_fit": 11.506775072408617,
+          "total": 48.22636885288894,
+          "type_affinity": 23.662419002810662,
+          "warm_image": 0.0
+        }
+      },
+      "factor": "failure_penalty",
+      "full_choice": "healthy",
+      "full_scores": {
+        "healthy": {
+          "availability": 6.140552511166027,
+          "data_locality": 0.0,
+          "failure_penalty": -0.0,
+          "load_balance": 6.916622266503629,
+          "memory_pressure": 0.0,
+          "resource_fit": 11.506775072408617,
+          "total": 48.22636885288894,
+          "type_affinity": 23.662419002810662,
+          "warm_image": 0.0
+        },
+        "risky": {
+          "availability": 6.140552511166027,
+          "data_locality": 0.0,
+          "failure_penalty": -12.375836319688293,
+          "load_balance": 6.916622266503629,
+          "memory_pressure": 0.0,
+          "resource_fit": 11.506775072408617,
+          "total": 35.85053253320064,
+          "type_affinity": 23.662419002810662,
+          "warm_image": 0.0
+        }
+      }
+    },
+    "memory_pressure": {
+      "ablated_choice": "pressured",
+      "ablated_scores": {
+        "pressured": {
+          "availability": 6.140552511166027,
+          "data_locality": 0.0,
+          "failure_penalty": -0.0,
+          "load_balance": 6.916622266503629,
+          "memory_pressure": 0.0,
+          "resource_fit": 6.392652818004788,
+          "total": 43.11224659848511,
+          "type_affinity": 23.662419002810662,
+          "warm_image": 0.0
+        },
+        "safe": {
+          "availability": 6.140552511166027,
+          "data_locality": 0.0,
+          "failure_penalty": -0.0,
+          "load_balance": 6.916622266503629,
+          "memory_pressure": 0.0,
+          "resource_fit": 6.392652818004788,
+          "total": 37.19664184778244,
+          "type_affinity": 17.746814252107995,
+          "warm_image": 0.0
+        }
+      },
+      "factor": "memory_pressure",
+      "full_choice": "safe",
+      "full_scores": {
+        "pressured": {
+          "availability": 6.140552511166027,
+          "data_locality": 0.0,
+          "failure_penalty": -0.0,
+          "load_balance": 6.916622266503629,
+          "memory_pressure": -6.414552965860827,
+          "resource_fit": 6.392652818004788,
+          "total": 36.69769363262428,
+          "type_affinity": 23.662419002810662,
+          "warm_image": 0.0
+        },
+        "safe": {
+          "availability": 6.140552511166027,
+          "data_locality": 0.0,
+          "failure_penalty": -0.0,
+          "load_balance": 6.916622266503629,
+          "memory_pressure": 0.0,
+          "resource_fit": 6.392652818004788,
+          "total": 37.19664184778244,
+          "type_affinity": 17.746814252107995,
+          "warm_image": 0.0
+        }
+      }
+    },
+    "warm_image": {
+      "ablated_choice": "cold",
+      "ablated_scores": {
+        "cold": {
+          "availability": 6.140552511166027,
+          "data_locality": 0.0,
+          "failure_penalty": -0.0,
+          "load_balance": 6.916622266503629,
+          "memory_pressure": 0.0,
+          "resource_fit": 11.506775072408617,
+          "total": 36.395159351483606,
+          "type_affinity": 11.831209501405331,
+          "warm_image": 0.0
+        },
+        "warm": {
+          "availability": 6.140552511166027,
+          "data_locality": 0.0,
+          "failure_penalty": -0.0,
+          "load_balance": 6.916622266503629,
+          "memory_pressure": 0.0,
+          "resource_fit": 11.506775072408617,
+          "total": 36.395159351483606,
+          "type_affinity": 11.831209501405331,
+          "warm_image": 0.0
+        }
+      },
+      "factor": "warm_image",
+      "full_choice": "warm",
+      "full_scores": {
+        "cold": {
+          "availability": 6.140552511166027,
+          "data_locality": 0.0,
+          "failure_penalty": -0.0,
+          "load_balance": 6.916622266503629,
+          "memory_pressure": 0.0,
+          "resource_fit": 11.506775072408617,
+          "total": 36.395159351483606,
+          "type_affinity": 11.831209501405331,
+          "warm_image": 0.0
+        },
+        "warm": {
+          "availability": 6.140552511166027,
+          "data_locality": 0.0,
+          "failure_penalty": -0.0,
+          "load_balance": 6.916622266503629,
+          "memory_pressure": 0.0,
+          "resource_fit": 11.506775072408617,
+          "total": 68.19115529845682,
+          "type_affinity": 11.831209501405331,
+          "warm_image": 31.795995946973218
+        }
+      }
+    }
+  },
+  "tuned_weights": {
+    "data_locality": 11.257918606183544,
+    "failure_penalty": -19.80133811150127,
+    "load_balance": 6.916622266503629,
+    "memory_pressure": -7.160431217705109,
+    "node_availability": 6.140552511166027,
+    "resource_fit": 18.264722337156538,
+    "type_affinity": 23.662419002810662,
+    "warm_image": 31.795995946973218
+  }
+}

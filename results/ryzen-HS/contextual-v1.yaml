@@ -1,0 +1,47 @@
+schema_version: 1
+profile:
+  name: contextual-v1
+  training_suite: generic-v1
+  default:
+    algorithm: heft
+  contexts:
+    cpu:fanin:
+      algorithm: heft
+    cpu:fanout:
+      algorithm: heft-ra
+    cpu:forkjoin:
+      algorithm: heft
+    cpu:independent:
+      algorithm: heft
+    cpu:linear:
+      algorithm: heft
+    io:fanin:
+      algorithm: heft
+    io:fanout:
+      algorithm: heft
+    io:forkjoin:
+      algorithm: heft
+    io:independent:
+      algorithm: heft
+    io:linear:
+      algorithm: heft
+    memory:fanin:
+      algorithm: heft
+    memory:fanout:
+      algorithm: heft
+    memory:forkjoin:
+      algorithm: heft
+    memory:independent:
+      algorithm: heft
+    memory:linear:
+      algorithm: heft
+    mixed:fanin:
+      algorithm: heft
+    mixed:fanout:
+      algorithm: heft
+    mixed:forkjoin:
+      algorithm: heft
+    mixed:independent:
+      algorithm: heft
+    mixed:linear:
+      algorithm: heft

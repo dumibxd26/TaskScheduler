@@ -1,0 +1,189 @@
+{
+  "case_count": 1000,
+  "objective_leaders": {
+    "deadline_hit_rate": {
+      "policies": [
+        "heft-ra-cap"
+      ],
+      "value": 0.7026666666666667
+    },
+    "median_energy_j": {
+      "policies": [
+        "heft-ra"
+      ],
+      "value": 2685.80878408532
+    },
+    "median_makespan_s": {
+      "policies": [
+        "heft-ra-cap"
+      ],
+      "value": 47.83198805457956
+    },
+    "median_response_regret": {
+      "policies": [
+        "heft-ra-cap"
+      ],
+      "value": 0.00040847958594392164
+    },
+    "p95_response_regret": {
+      "policies": [
+        "heft-ra",
+        "heft-ra-cap"
+      ],
+      "value": 0.6388012239520393
+    }
+  },
+  "ranking": [
+    {
+      "cases": 1000,
+      "deadline_hit_rate": 0.7026666666666667,
+      "mean_preemptions": 0.0,
+      "mean_response_regret": 0.11470890178605016,
+      "mean_response_regret_ci95": [
+        0.10334448112783544,
+        0.12649844629156368
+      ],
+      "median_energy_j": 2690.015905302713,
+      "median_makespan_s": 47.83198805457956,
+      "median_response_regret": 0.00040847958594392164,
+      "p95_response_regret": 0.6388012239520393,
+      "policy": "heft-ra-cap"
+    },
+    {
+      "cases": 1000,
+      "deadline_hit_rate": 0.6946666666666667,
+      "mean_preemptions": 0.0,
+      "mean_response_regret": 0.1152356915982293,
+      "mean_response_regret_ci95": [
+        0.10360944078326866,
+        0.1267941591966107
+      ],
+      "median_energy_j": 2685.80878408532,
+      "median_makespan_s": 48.73313748016551,
+      "median_response_regret": 0.004170041993250884,
+      "p95_response_regret": 0.6388012239520393,
+      "policy": "heft-ra"
+    },
+    {
+      "cases": 1000,
+      "deadline_hit_rate": 0.676,
+      "mean_preemptions": 0.755,
+      "mean_response_regret": 0.15832646558218028,
+      "mean_response_regret_ci95": [
+        0.13668976695305599,
+        0.18157592250520202
+      ],
+      "median_energy_j": 2784.0126789296355,
+      "median_makespan_s": 53.17347485966188,
+      "median_response_regret": 0.007691178666841991,
+      "p95_response_regret": 0.836395364511118,
+      "policy": "adaptive"
+    },
+    {
+      "cases": 1000,
+      "deadline_hit_rate": 0.6613333333333333,
+      "mean_preemptions": 0.0,
+      "mean_response_regret": 0.19752754081356522,
+      "mean_response_regret_ci95": [
+        0.17629156641588603,
+        0.21949254746004973
+      ],
+      "median_energy_j": 2811.2809367197074,
+      "median_makespan_s": 53.53734702639656,
+      "median_response_regret": 0.010099462963921724,
+      "p95_response_regret": 0.8235624119553744,
+      "policy": "eft"
+    },
+    {
+      "cases": 1000,
+      "deadline_hit_rate": 0.66,
+      "mean_preemptions": 0.0,
+      "mean_response_regret": 0.20617946538107526,
+      "mean_response_regret_ci95": [
+        0.18458343698541385,
+        0.22817653633545154
+      ],
+      "median_energy_j": 2807.47631777099,
+      "median_makespan_s": 55.09068607386054,
+      "median_response_regret": 0.010364749334333623,
+      "p95_response_regret": 0.8309265814656179,
+      "policy": "legacy"
+    },
+    {
+      "cases": 1000,
+      "deadline_hit_rate": 0.676,
+      "mean_preemptions": 0.0,
+      "mean_response_regret": 0.16961789614423736,
+      "mean_response_regret_ci95": [
+        0.14791311009204644,
+        0.19281925068114378
+      ],
+      "median_energy_j": 2799.3457280301864,
+      "median_makespan_s": 50.98092935424249,
+      "median_response_regret": 0.011985999245573753,
+      "p95_response_regret": 0.836395364511118,
+      "policy": "adaptive-no-preempt"
+    },
+    {
+      "cases": 1000,
+      "deadline_hit_rate": 0.6613333333333333,
+      "mean_preemptions": 0.0,
+      "mean_response_regret": 0.21509459193067484,
+      "mean_response_regret_ci95": [
+        0.1940697433486563,
+        0.2368960531370315
+      ],
+      "median_energy_j": 2820.470466020325,
+      "median_makespan_s": 52.63925530945201,
+      "median_response_regret": 0.015727197997938536,
+      "p95_response_regret": 0.8235624119553744,
+      "policy": "heft"
+    },
+    {
+      "cases": 1000,
+      "deadline_hit_rate": 0.6786666666666666,
+      "mean_preemptions": 0.0,
+      "mean_response_regret": 0.2882170238929119,
+      "mean_response_regret_ci95": [
+        0.2595087046927093,
+        0.31839872342333125
+      ],
+      "median_energy_j": 3136.743182874946,
+      "median_makespan_s": 57.433161611159804,
+      "median_response_regret": 0.09185980208952849,
+      "p95_response_regret": 0.9729934789955332,
+      "policy": "legacy-tuned"
+    },
+    {
+      "cases": 1000,
+      "deadline_hit_rate": 0.6746666666666666,
+      "mean_preemptions": 0.0,
+      "mean_response_regret": 0.5131535815515083,
+      "mean_response_regret_ci95": [
+        0.4711325062755435,
+        0.5522220447281259
+      ],
+      "median_energy_j": 3439.897715157509,
+      "median_makespan_s": 69.87821215986108,
+      "median_response_regret": 0.3020490446697882,
+      "p95_response_regret": 2.0881186072252045,
+      "policy": "legacy-v1"
+    },
+    {
+      "cases": 1000,
+      "deadline_hit_rate": 0.352,
+      "mean_preemptions": 0.0,
+      "mean_response_regret": 3.506392992801147,
+      "mean_response_regret_ci95": [
+        3.051713672398411,
+        3.9965274749270856
+      ],
+      "median_energy_j": 5245.54453985052,
+      "median_makespan_s": 117.9891185530202,
+      "median_response_regret": 0.8268281559426205,
+      "p95_response_regret": 17.350970941523347,
+      "policy": "k8s-default"
+    }
+  ],
+  "record_count": 10000
+}

@@ -1,0 +1,377 @@
+{
+  "case_count": 3750,
+  "cluster_family_recommendations": {
+    "asymmetric-network": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "heft-ra",
+        "heft-ra-cap"
+      ],
+      "tie": true
+    },
+    "balanced-heterogeneous": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "heft-ra",
+        "heft-ra-cap"
+      ],
+      "tie": true
+    },
+    "homogeneous": {
+      "median_regret": 0.0,
+      "p95_regret": 0.010715780864926527,
+      "policies": [
+        "heft-ra",
+        "heft-ra-cap"
+      ],
+      "tie": true
+    },
+    "local-calibration": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "adaptive",
+        "adaptive-no-preempt",
+        "eft",
+        "heft",
+        "heft-ra",
+        "heft-ra-cap",
+        "k8s-default",
+        "legacy",
+        "legacy-tuned",
+        "legacy-v1"
+      ],
+      "tie": true
+    },
+    "unreliable-thermal": {
+      "median_regret": 0.0,
+      "p95_regret": 0.14370459521753376,
+      "policies": [
+        "heft-ra",
+        "heft-ra-cap"
+      ],
+      "tie": true
+    }
+  },
+  "ranking": [
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.824,
+      "mean_regret": 0.003945928695559373,
+      "mean_regret_ci95": [
+        0.0031109570871208697,
+        0.004862358995276233
+      ],
+      "median_bound_ratio": 1.1964301596178144,
+      "median_regret": 0.0,
+      "p95_regret": 0.0011927606102641874,
+      "policy": "heft-ra",
+      "win_rate": 0.948,
+      "wins": 3555
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.824,
+      "mean_regret": 0.003945928695559373,
+      "mean_regret_ci95": [
+        0.0031109570871208697,
+        0.004862358995276233
+      ],
+      "median_bound_ratio": 1.1964301596178144,
+      "median_regret": 0.0,
+      "p95_regret": 0.0011927606102641874,
+      "policy": "heft-ra-cap",
+      "win_rate": 0.948,
+      "wins": 3555
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.728,
+      "mean_regret": 0.1206284015840802,
+      "mean_regret_ci95": [
+        0.10244956391094524,
+        0.1400017087722222
+      ],
+      "median_bound_ratio": 1.2053798881653446,
+      "median_regret": 0.0,
+      "p95_regret": 0.5058848528055515,
+      "policy": "heft",
+      "win_rate": 0.8002666666666667,
+      "wins": 3001
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.728,
+      "mean_regret": 0.12227194621261911,
+      "mean_regret_ci95": [
+        0.10394620921238978,
+        0.14154587490788206
+      ],
+      "median_bound_ratio": 1.2053798881653446,
+      "median_regret": 0.0,
+      "p95_regret": 0.5058848528055515,
+      "policy": "eft",
+      "win_rate": 0.7936,
+      "wins": 2976
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.72,
+      "mean_regret": 0.13385541925034408,
+      "mean_regret_ci95": [
+        0.11339262829174122,
+        0.15491757903678052
+      ],
+      "median_bound_ratio": 1.2052403462548729,
+      "median_regret": 0.0,
+      "p95_regret": 0.5204659989681493,
+      "policy": "legacy",
+      "win_rate": 0.7874666666666666,
+      "wins": 2953
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.744,
+      "mean_regret": 0.13424381300595783,
+      "mean_regret_ci95": [
+        0.11994032344377666,
+        0.14952126069193183
+      ],
+      "median_bound_ratio": 1.225328632552822,
+      "median_regret": 0.0,
+      "p95_regret": 0.6419618578654946,
+      "policy": "adaptive",
+      "win_rate": 0.7317333333333333,
+      "wins": 2744
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.744,
+      "mean_regret": 0.13424381300595783,
+      "mean_regret_ci95": [
+        0.11994032344377666,
+        0.14952126069193183
+      ],
+      "median_bound_ratio": 1.225328632552822,
+      "median_regret": 0.0,
+      "p95_regret": 0.6419618578654946,
+      "policy": "adaptive-no-preempt",
+      "win_rate": 0.7317333333333333,
+      "wins": 2744
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.74,
+      "mean_regret": 0.1842468816499496,
+      "mean_regret_ci95": [
+        0.1664606441117194,
+        0.2032964465837255
+      ],
+      "median_bound_ratio": 1.2414137810423282,
+      "median_regret": 0.0,
+      "p95_regret": 0.6808844048070704,
+      "policy": "legacy-tuned",
+      "win_rate": 0.5824,
+      "wins": 2184
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.756,
+      "mean_regret": 0.2763973313068323,
+      "mean_regret_ci95": [
+        0.2511112094038676,
+        0.30195286915589653
+      ],
+      "median_bound_ratio": 1.2555216428282299,
+      "median_regret": 0.0,
+      "p95_regret": 1.7547006694989262,
+      "policy": "legacy-v1",
+      "win_rate": 0.5461333333333334,
+      "wins": 2048
+    },
+    {
+      "cases": 3750,
+      "deadline_hit_rate": 0.644,
+      "mean_regret": 1.625570248393399,
+      "mean_regret_ci95": [
+        1.4650886729686903,
+        1.7741750894655506
+      ],
+      "median_bound_ratio": 1.4563660034893156,
+      "median_regret": 0.05085685767608106,
+      "p95_regret": 12.575242898029929,
+      "policy": "k8s-default",
+      "win_rate": 0.42506666666666665,
+      "wins": 1594
+    }
+  ],
+  "record_count": 37500,
+  "reference_results": [],
+  "workflow_family_recommendations": {
+    "cache-sensitive": {
+      "median_regret": 0.0,
+      "p95_regret": 0.05694382052749303,
+      "policies": [
+        "heft-ra",
+        "heft-ra-cap"
+      ],
+      "tie": true
+    },
+    "cpu-heavy": {
+      "median_regret": 0.0,
+      "p95_regret": 0.3136122775652541,
+      "policies": [
+        "heft-ra",
+        "heft-ra-cap"
+      ],
+      "tie": true
+    },
+    "data-heavy": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "heft-ra",
+        "heft-ra-cap",
+        "legacy"
+      ],
+      "tie": true
+    },
+    "deep": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "heft-ra",
+        "heft-ra-cap",
+        "legacy"
+      ],
+      "tie": true
+    },
+    "diamond": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "heft-ra",
+        "heft-ra-cap"
+      ],
+      "tie": true
+    },
+    "failure-recovery": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "adaptive",
+        "adaptive-no-preempt",
+        "eft",
+        "heft",
+        "heft-ra",
+        "heft-ra-cap",
+        "legacy"
+      ],
+      "tie": true
+    },
+    "fan-in": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "heft-ra",
+        "heft-ra-cap",
+        "legacy"
+      ],
+      "tie": true
+    },
+    "fan-out": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "heft-ra",
+        "heft-ra-cap"
+      ],
+      "tie": true
+    },
+    "gang": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "heft-ra",
+        "heft-ra-cap",
+        "legacy"
+      ],
+      "tie": true
+    },
+    "io-heavy": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "adaptive",
+        "adaptive-no-preempt",
+        "eft",
+        "heft",
+        "heft-ra",
+        "heft-ra-cap"
+      ],
+      "tie": true
+    },
+    "linear": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "heft-ra",
+        "heft-ra-cap",
+        "legacy"
+      ],
+      "tie": true
+    },
+    "memory-heavy": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "heft-ra",
+        "heft-ra-cap",
+        "legacy"
+      ],
+      "tie": true
+    },
+    "mixed": {
+      "median_regret": 0.0,
+      "p95_regret": 0.20669918105684326,
+      "policies": [
+        "heft-ra",
+        "heft-ra-cap"
+      ],
+      "tie": true
+    },
+    "priority": {
+      "median_regret": 0.0,
+      "p95_regret": 0.027683811950774517,
+      "policies": [
+        "heft-ra",
+        "heft-ra-cap"
+      ],
+      "tie": true
+    },
+    "wide": {
+      "median_regret": 0.0,
+      "p95_regret": 0.0,
+      "policies": [
+        "eft",
+        "heft",
+        "heft-ra",
+        "heft-ra-cap",
+        "legacy"
+      ],
+      "tie": true
+    }
+  }
+}

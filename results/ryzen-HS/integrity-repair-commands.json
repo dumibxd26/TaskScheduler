@@ -1,0 +1,742 @@
+[
+  {
+    "name": "repair-create-balanced",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "kind_lab.py",
+      "--profiles",
+      "results\\pc-ryzen-8840hs-2026-11-01\\kind-profiles.yaml",
+      "create",
+      "balanced",
+      "--record",
+      "results\\pc-ryzen-8840hs-2026-11-01\\kind-validation\\balanced-repair-cluster.json"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:11:30.3889336Z",
+    "finished_at": "2026-11-01T17:12:16.6581314Z",
+    "wall_seconds": 46.265814,
+    "log": "repair-create-balanced.log"
+  },
+  {
+    "name": "repair-load-balanced-ts-control-plane",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-control-plane:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:12:16.6918937Z",
+    "finished_at": "2026-11-01T17:12:34.8238037Z",
+    "wall_seconds": 18.1313624,
+    "log": "repair-load-balanced-ts-control-plane.log"
+  },
+  {
+    "name": "repair-load-balanced-ts-fileserver",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-fileserver:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:12:34.8257617Z",
+    "finished_at": "2026-11-01T17:12:44.6870318Z",
+    "wall_seconds": 9.8611923,
+    "log": "repair-load-balanced-ts-fileserver.log"
+  },
+  {
+    "name": "repair-load-balanced-ts-bw-probe",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-bw-probe:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:12:44.6888215Z",
+    "finished_at": "2026-11-01T17:12:59.6973586Z",
+    "wall_seconds": 15.0084551,
+    "log": "repair-load-balanced-ts-bw-probe.log"
+  },
+  {
+    "name": "repair-load-balanced-ts-thermal",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-thermal:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:12:59.6993000Z",
+    "finished_at": "2026-11-01T17:13:11.5959024Z",
+    "wall_seconds": 11.8965034,
+    "log": "repair-load-balanced-ts-thermal.log"
+  },
+  {
+    "name": "repair-load-balanced-ts-task-io",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-task-io:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:13:11.5976035Z",
+    "finished_at": "2026-11-01T17:13:22.6084048Z",
+    "wall_seconds": 11.0107279,
+    "log": "repair-load-balanced-ts-task-io.log"
+  },
+  {
+    "name": "repair-load-balanced-ts-task-mem",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-task-mem:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:13:22.6102059Z",
+    "finished_at": "2026-11-01T17:13:36.1630103Z",
+    "wall_seconds": 13.5527219,
+    "log": "repair-load-balanced-ts-task-mem.log"
+  },
+  {
+    "name": "repair-load-balanced-ts-task-cpu",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-task-cpu:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:13:36.1650523Z",
+    "finished_at": "2026-11-01T17:13:47.0013602Z",
+    "wall_seconds": 10.8362455,
+    "log": "repair-load-balanced-ts-task-cpu.log"
+  },
+  {
+    "name": "repair-install-balanced",
+    "executable": "kubectl",
+    "arguments": [
+      "apply",
+      "-k",
+      "."
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:13:47.0030551Z",
+    "finished_at": "2026-11-01T17:13:47.6873369Z",
+    "wall_seconds": 0.684206,
+    "log": "repair-install-balanced.log"
+  },
+  {
+    "name": "repair-ready-balanced-ts-controller",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "deployment/ts-controller",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:13:47.6897512Z",
+    "finished_at": "2026-11-01T17:13:48.9616312Z",
+    "wall_seconds": 1.2718142,
+    "log": "repair-ready-balanced-ts-controller.log"
+  },
+  {
+    "name": "repair-ready-balanced-ts-scheduler",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "deployment/ts-scheduler",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:13:48.9657638Z",
+    "finished_at": "2026-11-01T17:13:52.9648798Z",
+    "wall_seconds": 3.9990396,
+    "log": "repair-ready-balanced-ts-scheduler.log"
+  },
+  {
+    "name": "repair-ready-balanced-ts-fileserver",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "daemonset/ts-fileserver",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:13:52.9668214Z",
+    "finished_at": "2026-11-01T17:13:56.4408025Z",
+    "wall_seconds": 3.4738169,
+    "log": "repair-ready-balanced-ts-fileserver.log"
+  },
+  {
+    "name": "repair-ready-balanced-ts-bw-probe",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "daemonset/ts-bw-probe",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:13:56.4428916Z",
+    "finished_at": "2026-11-01T17:13:56.5827195Z",
+    "wall_seconds": 0.1397572,
+    "log": "repair-ready-balanced-ts-bw-probe.log"
+  },
+  {
+    "name": "repair-ready-balanced-ts-thermal",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "daemonset/ts-thermal",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:13:56.5842335Z",
+    "finished_at": "2026-11-01T17:13:56.7170621Z",
+    "wall_seconds": 0.1327633,
+    "log": "repair-ready-balanced-ts-thermal.log"
+  },
+  {
+    "name": "repair-trials-balanced",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "C:\\Users\\bdumitrescu\\.copilot\\session-state\\d1b8eb9e-c336-4612-82cf-776ad8e74a45\\files\\rerun-invalid-trials.py",
+      "balanced"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:13:56.7186423Z",
+    "finished_at": "2026-11-01T17:19:37.0361970Z",
+    "wall_seconds": 340.3174814,
+    "log": "repair-trials-balanced.log"
+  },
+  {
+    "name": "repair-create-homogeneous",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "kind_lab.py",
+      "--profiles",
+      "results\\pc-ryzen-8840hs-2026-11-01\\kind-profiles.yaml",
+      "create",
+      "homogeneous",
+      "--record",
+      "results\\pc-ryzen-8840hs-2026-11-01\\kind-validation\\homogeneous-repair-cluster.json"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:19:37.0376088Z",
+    "finished_at": "2026-11-01T17:20:30.5150585Z",
+    "wall_seconds": 53.4773999,
+    "log": "repair-create-homogeneous.log"
+  },
+  {
+    "name": "repair-load-homogeneous-ts-control-plane",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-control-plane:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:20:30.5167230Z",
+    "finished_at": "2026-11-01T17:20:45.2924667Z",
+    "wall_seconds": 14.7756823,
+    "log": "repair-load-homogeneous-ts-control-plane.log"
+  },
+  {
+    "name": "repair-load-homogeneous-ts-fileserver",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-fileserver:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:20:45.2939815Z",
+    "finished_at": "2026-11-01T17:20:52.9657525Z",
+    "wall_seconds": 7.671712,
+    "log": "repair-load-homogeneous-ts-fileserver.log"
+  },
+  {
+    "name": "repair-load-homogeneous-ts-bw-probe",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-bw-probe:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:20:52.9676562Z",
+    "finished_at": "2026-11-01T17:21:05.4378883Z",
+    "wall_seconds": 12.4701796,
+    "log": "repair-load-homogeneous-ts-bw-probe.log"
+  },
+  {
+    "name": "repair-load-homogeneous-ts-thermal",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-thermal:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:21:05.4396119Z",
+    "finished_at": "2026-11-01T17:21:15.2157377Z",
+    "wall_seconds": 9.7760752,
+    "log": "repair-load-homogeneous-ts-thermal.log"
+  },
+  {
+    "name": "repair-load-homogeneous-ts-task-io",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-task-io:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:21:15.2256382Z",
+    "finished_at": "2026-11-01T17:21:24.9282090Z",
+    "wall_seconds": 9.7025044,
+    "log": "repair-load-homogeneous-ts-task-io.log"
+  },
+  {
+    "name": "repair-load-homogeneous-ts-task-mem",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-task-mem:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:21:24.9301743Z",
+    "finished_at": "2026-11-01T17:21:34.4136870Z",
+    "wall_seconds": 9.4834363,
+    "log": "repair-load-homogeneous-ts-task-mem.log"
+  },
+  {
+    "name": "repair-load-homogeneous-ts-task-cpu",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-task-cpu:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:21:34.4153899Z",
+    "finished_at": "2026-11-01T17:21:44.2462176Z",
+    "wall_seconds": 9.8307757,
+    "log": "repair-load-homogeneous-ts-task-cpu.log"
+  },
+  {
+    "name": "repair-install-homogeneous",
+    "executable": "kubectl",
+    "arguments": [
+      "apply",
+      "-k",
+      "."
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:21:44.2485790Z",
+    "finished_at": "2026-11-01T17:21:44.8032472Z",
+    "wall_seconds": 0.5546104,
+    "log": "repair-install-homogeneous.log"
+  },
+  {
+    "name": "repair-ready-homogeneous-ts-controller",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "deployment/ts-controller",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:21:44.8058692Z",
+    "finished_at": "2026-11-01T17:21:45.9451247Z",
+    "wall_seconds": 1.1391732,
+    "log": "repair-ready-homogeneous-ts-controller.log"
+  },
+  {
+    "name": "repair-ready-homogeneous-ts-scheduler",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "deployment/ts-scheduler",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:21:45.9485508Z",
+    "finished_at": "2026-11-01T17:21:49.9394908Z",
+    "wall_seconds": 3.9908652,
+    "log": "repair-ready-homogeneous-ts-scheduler.log"
+  },
+  {
+    "name": "repair-ready-homogeneous-ts-fileserver",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "daemonset/ts-fileserver",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:21:49.9412858Z",
+    "finished_at": "2026-11-01T17:21:50.0707995Z",
+    "wall_seconds": 0.1294522,
+    "log": "repair-ready-homogeneous-ts-fileserver.log"
+  },
+  {
+    "name": "repair-ready-homogeneous-ts-bw-probe",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "daemonset/ts-bw-probe",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:21:50.0728773Z",
+    "finished_at": "2026-11-01T17:21:50.2049170Z",
+    "wall_seconds": 0.1319899,
+    "log": "repair-ready-homogeneous-ts-bw-probe.log"
+  },
+  {
+    "name": "repair-ready-homogeneous-ts-thermal",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "daemonset/ts-thermal",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:21:50.2067199Z",
+    "finished_at": "2026-11-01T17:21:50.3365363Z",
+    "wall_seconds": 0.1297606,
+    "log": "repair-ready-homogeneous-ts-thermal.log"
+  },
+  {
+    "name": "repair-trials-homogeneous",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "C:\\Users\\bdumitrescu\\.copilot\\session-state\\d1b8eb9e-c336-4612-82cf-776ad8e74a45\\files\\rerun-invalid-trials.py",
+      "homogeneous"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:21:50.3389019Z",
+    "finished_at": "2026-11-01T17:26:26.1072143Z",
+    "wall_seconds": 275.768261,
+    "log": "repair-trials-homogeneous.log"
+  },
+  {
+    "name": "repair-create-edge",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "kind_lab.py",
+      "--profiles",
+      "results\\pc-ryzen-8840hs-2026-11-01\\kind-profiles.yaml",
+      "create",
+      "edge",
+      "--record",
+      "results\\pc-ryzen-8840hs-2026-11-01\\kind-validation\\edge-repair-cluster.json"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:26:26.1091212Z",
+    "finished_at": "2026-11-01T17:27:18.1871635Z",
+    "wall_seconds": 52.0779923,
+    "log": "repair-create-edge.log"
+  },
+  {
+    "name": "repair-load-edge-ts-control-plane",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-control-plane:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:27:18.1904147Z",
+    "finished_at": "2026-11-01T17:27:34.7082090Z",
+    "wall_seconds": 16.5177478,
+    "log": "repair-load-edge-ts-control-plane.log"
+  },
+  {
+    "name": "repair-load-edge-ts-fileserver",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-fileserver:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:27:34.7100254Z",
+    "finished_at": "2026-11-01T17:27:44.1264617Z",
+    "wall_seconds": 9.4163817,
+    "log": "repair-load-edge-ts-fileserver.log"
+  },
+  {
+    "name": "repair-load-edge-ts-bw-probe",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-bw-probe:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:27:44.1286575Z",
+    "finished_at": "2026-11-01T17:27:58.9895025Z",
+    "wall_seconds": 14.8607942,
+    "log": "repair-load-edge-ts-bw-probe.log"
+  },
+  {
+    "name": "repair-load-edge-ts-thermal",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-thermal:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:27:58.9916676Z",
+    "finished_at": "2026-11-01T17:28:10.7388787Z",
+    "wall_seconds": 11.7471741,
+    "log": "repair-load-edge-ts-thermal.log"
+  },
+  {
+    "name": "repair-load-edge-ts-task-io",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-task-io:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:28:10.7406036Z",
+    "finished_at": "2026-11-01T17:28:21.8596651Z",
+    "wall_seconds": 11.1190271,
+    "log": "repair-load-edge-ts-task-io.log"
+  },
+  {
+    "name": "repair-load-edge-ts-task-mem",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-task-mem:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:28:21.8618474Z",
+    "finished_at": "2026-11-01T17:28:33.0203884Z",
+    "wall_seconds": 11.1585117,
+    "log": "repair-load-edge-ts-task-mem.log"
+  },
+  {
+    "name": "repair-load-edge-ts-task-cpu",
+    "executable": "kind",
+    "arguments": [
+      "load",
+      "docker-image",
+      "ts-task-cpu:v1",
+      "--name",
+      "ts-pc-8840hs-20261101"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:28:33.0218187Z",
+    "finished_at": "2026-11-01T17:28:45.0488680Z",
+    "wall_seconds": 12.0270251,
+    "log": "repair-load-edge-ts-task-cpu.log"
+  },
+  {
+    "name": "repair-install-edge",
+    "executable": "kubectl",
+    "arguments": [
+      "apply",
+      "-k",
+      "."
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:28:45.0503576Z",
+    "finished_at": "2026-11-01T17:28:45.5841743Z",
+    "wall_seconds": 0.5337553,
+    "log": "repair-install-edge.log"
+  },
+  {
+    "name": "repair-ready-edge-ts-controller",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "deployment/ts-controller",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:28:45.5865215Z",
+    "finished_at": "2026-11-01T17:28:47.4228084Z",
+    "wall_seconds": 1.8362483,
+    "log": "repair-ready-edge-ts-controller.log"
+  },
+  {
+    "name": "repair-ready-edge-ts-scheduler",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "deployment/ts-scheduler",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:28:47.4249663Z",
+    "finished_at": "2026-11-01T17:28:50.3048795Z",
+    "wall_seconds": 2.8798761,
+    "log": "repair-ready-edge-ts-scheduler.log"
+  },
+  {
+    "name": "repair-ready-edge-ts-fileserver",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "daemonset/ts-fileserver",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:28:50.3067325Z",
+    "finished_at": "2026-11-01T17:28:54.4379890Z",
+    "wall_seconds": 4.1312104,
+    "log": "repair-ready-edge-ts-fileserver.log"
+  },
+  {
+    "name": "repair-ready-edge-ts-bw-probe",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "daemonset/ts-bw-probe",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:28:54.4399922Z",
+    "finished_at": "2026-11-01T17:28:54.5817347Z",
+    "wall_seconds": 0.1417057,
+    "log": "repair-ready-edge-ts-bw-probe.log"
+  },
+  {
+    "name": "repair-ready-edge-ts-thermal",
+    "executable": "kubectl",
+    "arguments": [
+      "-n",
+      "ts-system",
+      "rollout",
+      "status",
+      "daemonset/ts-thermal",
+      "--timeout=240s"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:28:54.5841376Z",
+    "finished_at": "2026-11-01T17:28:54.7411209Z",
+    "wall_seconds": 0.1569421,
+    "log": "repair-ready-edge-ts-thermal.log"
+  },
+  {
+    "name": "repair-trials-edge",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "C:\\Users\\bdumitrescu\\.copilot\\session-state\\d1b8eb9e-c336-4612-82cf-776ad8e74a45\\files\\rerun-invalid-trials.py",
+      "edge"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:28:54.7439328Z",
+    "finished_at": "2026-11-01T17:40:45.9417646Z",
+    "wall_seconds": 711.1977908,
+    "log": "repair-trials-edge.log"
+  },
+  {
+    "name": "verified-kind-integrity",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "analyze_kind_validation.py",
+      "--results-dir",
+      "results\\pc-ryzen-8840hs-2026-11-01\\kind-validation"
+    ],
+    "exit_code": 0,
+    "started_at": "2026-11-01T17:40:46.5548735Z",
+    "finished_at": "2026-11-01T17:40:47.5830987Z",
+    "wall_seconds": 1.0281966,
+    "log": "verified-kind-integrity.log"
+  }
+]

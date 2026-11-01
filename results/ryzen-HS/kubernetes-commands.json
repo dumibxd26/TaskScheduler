@@ -1,0 +1,146 @@
+[
+  {
+    "name": "build-control-plane",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-control-plane:v1",
+      "-f",
+      "C:\\Users\\bdumitrescu\\.copilot\\session-state\\d1b8eb9e-c336-4612-82cf-776ad8e74a45\\files\\control-plane-mirror.Dockerfile",
+      "."
+    ],
+    "started_at": "2026-11-01T13:01:25.4502446Z",
+    "finished_at": "2026-11-01T13:01:27.8219750Z",
+    "wall_seconds": 2.3634688,
+    "exit_code": 0,
+    "log": "build-control-plane.log"
+  },
+  {
+    "name": "build-fileserver",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-fileserver:v1",
+      "images\\fileserver"
+    ],
+    "started_at": "2026-11-01T13:01:27.8836838Z",
+    "finished_at": "2026-11-01T13:01:30.8984116Z",
+    "wall_seconds": 3.0141894,
+    "exit_code": 0,
+    "log": "build-fileserver.log"
+  },
+  {
+    "name": "build-bw-probe",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-bw-probe:v1",
+      "-f",
+      "C:\\Users\\bdumitrescu\\.copilot\\session-state\\d1b8eb9e-c336-4612-82cf-776ad8e74a45\\files\\bw-probe-mirror.Dockerfile",
+      "images\\bw-probe"
+    ],
+    "started_at": "2026-11-01T13:01:30.9017079Z",
+    "finished_at": "2026-11-01T13:01:36.2271171Z",
+    "wall_seconds": 5.3253324,
+    "exit_code": 0,
+    "log": "build-bw-probe.log"
+  },
+  {
+    "name": "build-thermal",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-thermal:v1",
+      "-f",
+      "C:\\Users\\bdumitrescu\\.copilot\\session-state\\d1b8eb9e-c336-4612-82cf-776ad8e74a45\\files\\thermal-mirror.Dockerfile",
+      "images\\thermal"
+    ],
+    "started_at": "2026-11-01T13:01:36.2287664Z",
+    "finished_at": "2026-11-01T13:01:38.0384528Z",
+    "wall_seconds": 1.8095624,
+    "exit_code": 0,
+    "log": "build-thermal.log"
+  },
+  {
+    "name": "build-task-io",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-task-io:v1",
+      "-f",
+      "tasks\\task_io\\Dockerfile",
+      "."
+    ],
+    "started_at": "2026-11-01T13:01:38.0405052Z",
+    "finished_at": "2026-11-01T13:01:40.0946994Z",
+    "wall_seconds": 2.0539549,
+    "exit_code": 0,
+    "log": "build-task-io.log"
+  },
+  {
+    "name": "build-task-mem",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-task-mem:v1",
+      "-f",
+      "tasks\\task_mem\\Dockerfile",
+      "."
+    ],
+    "started_at": "2026-11-01T13:01:40.0970588Z",
+    "finished_at": "2026-11-01T13:01:41.8976678Z",
+    "wall_seconds": 1.8005262,
+    "exit_code": 0,
+    "log": "build-task-mem.log"
+  },
+  {
+    "name": "build-task-cpu",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-task-cpu:v1",
+      "-f",
+      "tasks\\task_cpu\\Dockerfile",
+      "."
+    ],
+    "started_at": "2026-11-01T13:01:41.9001637Z",
+    "finished_at": "2026-11-01T13:01:44.0905897Z",
+    "wall_seconds": 2.1903429,
+    "exit_code": 0,
+    "log": "build-task-cpu.log"
+  },
+  {
+    "name": "kind-matrix",
+    "executable": "powershell",
+    "arguments": [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      "scripts\\run-kind-validation.ps1",
+      "-Profiles",
+      "balanced,homogeneous,edge",
+      "-Repetitions",
+      "3",
+      "-Seed",
+      "2026",
+      "-SkipBuild",
+      "-ProfilesFile",
+      "results\\pc-ryzen-8840hs-2026-11-01\\kind-profiles.yaml",
+      "-ResultDirectory",
+      "results\\pc-ryzen-8840hs-2026-11-01\\kind-validation"
+    ],
+    "started_at": "2026-11-01T13:01:44.0924387Z",
+    "finished_at": "2026-11-01T17:07:35.1530128Z",
+    "wall_seconds": 14751.0059731,
+    "exit_code": 1,
+    "log": "kind-matrix.log"
+  }
+]

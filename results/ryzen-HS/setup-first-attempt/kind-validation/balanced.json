@@ -1,0 +1,767 @@
+{
+  "batch_definitions": {
+    "dag": {
+      "description": "Four same-priority DAGs arrive together: a data pipeline, a data-heavy fan-out, a fork-join, and independent mixed tasks. Probes heterogeneity-aware placement, DAG ordering, and data locality.",
+      "workflows": [
+        {
+          "arrival": "start",
+          "name": "dag-pipeline",
+          "preemptable": true,
+          "priority": "BATCH",
+          "tasks": [
+            {
+              "name": "ingest",
+              "template": "experiment-io-large"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "generated_file_path"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "ingest"
+                }
+              ],
+              "name": "stage",
+              "template": "experiment-mem"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "processed_array_size"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "stage"
+                }
+              ],
+              "name": "crunch",
+              "template": "experiment-cpu"
+            }
+          ],
+          "workflow_class": "PIPELINE"
+        },
+        {
+          "arrival": "start",
+          "name": "dag-fanout",
+          "preemptable": true,
+          "priority": "BATCH",
+          "tasks": [
+            {
+              "name": "source",
+              "template": "experiment-io-large"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "generated_file_path"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "source"
+                }
+              ],
+              "name": "leaf-1",
+              "template": "experiment-cpu"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "generated_file_path"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "source"
+                }
+              ],
+              "name": "leaf-2",
+              "template": "experiment-cpu"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "generated_file_path"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "source"
+                }
+              ],
+              "name": "leaf-3",
+              "template": "experiment-cpu"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "generated_file_path"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "source"
+                }
+              ],
+              "name": "leaf-4",
+              "template": "experiment-cpu"
+            }
+          ],
+          "workflow_class": "BATCH"
+        },
+        {
+          "arrival": "start",
+          "name": "dag-forkjoin",
+          "preemptable": true,
+          "priority": "BATCH",
+          "tasks": [
+            {
+              "name": "split",
+              "template": "experiment-io"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "generated_file_path"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "split"
+                }
+              ],
+              "name": "branch-cpu",
+              "template": "experiment-cpu"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "generated_file_path"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "split"
+                }
+              ],
+              "name": "branch-mem",
+              "template": "experiment-mem"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dependencyType": "EXECUTION",
+                  "parent": "split"
+                }
+              ],
+              "name": "branch-io",
+              "template": "experiment-io"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dependencyType": "EXECUTION",
+                  "parent": "branch-cpu"
+                },
+                {
+                  "dependencyType": "EXECUTION",
+                  "parent": "branch-mem"
+                },
+                {
+                  "dependencyType": "EXECUTION",
+                  "parent": "branch-io"
+                }
+              ],
+              "name": "join",
+              "template": "experiment-cpu"
+            }
+          ],
+          "workflow_class": "BATCH"
+        },
+        {
+          "arrival": "start",
+          "name": "dag-parallel",
+          "preemptable": true,
+          "priority": "BATCH",
+          "tasks": [
+            {
+              "name": "cpu-1",
+              "template": "experiment-cpu"
+            },
+            {
+              "name": "cpu-2",
+              "template": "experiment-cpu"
+            },
+            {
+              "name": "memory",
+              "template": "experiment-mem"
+            },
+            {
+              "name": "io",
+              "template": "experiment-io"
+            }
+          ],
+          "workflow_class": "BATCH"
+        }
+      ]
+    },
+    "priority": {
+      "description": "Best-effort pressure fills the cluster, then a critical workflow and three batch workflows arrive. Probes priority handling and preemption.",
+      "workflows": [
+        {
+          "arrival": "start",
+          "name": "pressure",
+          "preemptable": true,
+          "priority": "BEST_EFFORT",
+          "tasks": [
+            {
+              "name": "long-1",
+              "template": "experiment-cpu-long"
+            },
+            {
+              "name": "long-2",
+              "template": "experiment-cpu-long"
+            },
+            {
+              "name": "long-3",
+              "template": "experiment-cpu-long"
+            },
+            {
+              "name": "long-4",
+              "template": "experiment-cpu-long"
+            },
+            {
+              "name": "long-5",
+              "template": "experiment-cpu-long"
+            },
+            {
+              "name": "long-6",
+              "template": "experiment-cpu-long"
+            }
+          ],
+          "workflow_class": "BURST"
+        },
+        {
+          "arrival": "delayed",
+          "name": "critical",
+          "preemptable": false,
+          "priority": "CRITICAL",
+          "tasks": [
+            {
+              "name": "urgent-1",
+              "template": "experiment-cpu"
+            },
+            {
+              "name": "urgent-2",
+              "template": "experiment-cpu"
+            }
+          ],
+          "workflow_class": "BURST"
+        },
+        {
+          "arrival": "delayed",
+          "name": "pipeline",
+          "preemptable": true,
+          "priority": "BATCH",
+          "tasks": [
+            {
+              "name": "ingest",
+              "template": "experiment-io"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "generated_file_path"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "ingest"
+                }
+              ],
+              "name": "stage",
+              "template": "experiment-mem"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "processed_array_size"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "stage"
+                }
+              ],
+              "name": "crunch",
+              "template": "experiment-cpu"
+            }
+          ],
+          "workflow_class": "PIPELINE"
+        },
+        {
+          "arrival": "delayed",
+          "name": "fanout",
+          "preemptable": true,
+          "priority": "BATCH",
+          "tasks": [
+            {
+              "name": "source",
+              "template": "experiment-io"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "generated_file_path"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "source"
+                }
+              ],
+              "name": "leaf-1",
+              "template": "experiment-cpu"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "generated_file_path"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "source"
+                }
+              ],
+              "name": "leaf-2",
+              "template": "experiment-cpu"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "generated_file_path"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "source"
+                }
+              ],
+              "name": "leaf-3",
+              "template": "experiment-cpu"
+            },
+            {
+              "dependsOn": [
+                {
+                  "dataFields": [
+                    "generated_file_path"
+                  ],
+                  "dependencyType": "DATA",
+                  "parent": "source"
+                }
+              ],
+              "name": "leaf-4",
+              "template": "experiment-cpu"
+            }
+          ],
+          "workflow_class": "BATCH"
+        },
+        {
+          "arrival": "delayed",
+          "name": "parallel",
+          "preemptable": true,
+          "priority": "BATCH",
+          "tasks": [
+            {
+              "name": "io",
+              "template": "experiment-io"
+            },
+            {
+              "name": "memory",
+              "template": "experiment-mem"
+            },
+            {
+              "name": "cpu-1",
+              "template": "experiment-cpu"
+            },
+            {
+              "name": "cpu-2",
+              "template": "experiment-cpu"
+            }
+          ],
+          "workflow_class": "BATCH"
+        }
+      ]
+    }
+  },
+  "batches": [
+    "priority",
+    "dag"
+  ],
+  "calibration": null,
+  "cluster": {
+    "evidence_scope": "single-host Kind worker containers with Docker cgroup caps, emulated speeds, and tc-netem links; not independent machines",
+    "nodes": [
+      {
+        "bandwidth_mib_s_by_peer": {
+          "ts-node-edge": "6.81",
+          "ts-node-io": "88.61",
+          "ts-node-mem": "88.66",
+          "ts-pc-8840hs-20261101-control-plane": "335.84"
+        },
+        "capacity_cpu": "1",
+        "capacity_memory_mib": "640",
+        "cpu_temperature_c": null,
+        "emulated_speed": "{\"cpu\": 1.0, \"io\": 0.5, \"memory\": 0.55}",
+        "kind_profile": "balanced",
+        "name": "ts-node-cpu",
+        "netem_delay_ms": "2",
+        "netem_rate_mbit": "800",
+        "node_type": "CPU_OPT"
+      },
+      {
+        "bandwidth_mib_s_by_peer": {
+          "ts-node-cpu": "83.84",
+          "ts-node-io": "83.22",
+          "ts-node-mem": "83.21",
+          "ts-pc-8840hs-20261101-control-plane": "198.33"
+        },
+        "capacity_cpu": "0.5",
+        "capacity_memory_mib": "384",
+        "cpu_temperature_c": null,
+        "emulated_speed": "{\"cpu\": 0.3, \"io\": 0.3, \"memory\": 0.3}",
+        "kind_profile": "balanced",
+        "name": "ts-node-edge",
+        "netem_delay_ms": "10",
+        "netem_rate_mbit": "60",
+        "node_type": "GENERAL"
+      },
+      {
+        "bandwidth_mib_s_by_peer": {
+          "ts-node-cpu": "88.29",
+          "ts-node-edge": "6.82",
+          "ts-node-mem": "88.64",
+          "ts-pc-8840hs-20261101-control-plane": "227.93"
+        },
+        "capacity_cpu": "0.5",
+        "capacity_memory_mib": "384",
+        "cpu_temperature_c": null,
+        "emulated_speed": "{\"cpu\": 0.4, \"io\": 1.0, \"memory\": 0.5}",
+        "kind_profile": "balanced",
+        "name": "ts-node-io",
+        "netem_delay_ms": "2",
+        "netem_rate_mbit": "800",
+        "node_type": "IO_OPT"
+      },
+      {
+        "bandwidth_mib_s_by_peer": {
+          "ts-node-cpu": "88.96",
+          "ts-node-edge": "6.82",
+          "ts-node-io": "88.98",
+          "ts-pc-8840hs-20261101-control-plane": "243.20"
+        },
+        "capacity_cpu": "1",
+        "capacity_memory_mib": "640",
+        "cpu_temperature_c": null,
+        "emulated_speed": "{\"cpu\": 0.45, \"io\": 0.55, \"memory\": 1.0}",
+        "kind_profile": "balanced",
+        "name": "ts-node-mem",
+        "netem_delay_ms": "2",
+        "netem_rate_mbit": "800",
+        "node_type": "MEM_OPT"
+      }
+    ]
+  },
+  "completed_at": null,
+  "experiment": "kind-validation",
+  "policies": [
+    "kube-default",
+    "legacy-v1",
+    "legacy-tuned",
+    "eft",
+    "heft",
+    "heft-ra",
+    "heft-ra-cap",
+    "adaptive-no-preempt",
+    "adaptive"
+  ],
+  "priority_delay_seconds": 7,
+  "profile": "balanced",
+  "repetitions": 3,
+  "run_id": "1101125412",
+  "schedule": [
+    [
+      1,
+      "priority",
+      "heft-ra"
+    ],
+    [
+      1,
+      "priority",
+      "legacy-tuned"
+    ],
+    [
+      1,
+      "priority",
+      "kube-default"
+    ],
+    [
+      1,
+      "priority",
+      "legacy-v1"
+    ],
+    [
+      1,
+      "dag",
+      "heft"
+    ],
+    [
+      1,
+      "priority",
+      "heft"
+    ],
+    [
+      1,
+      "dag",
+      "legacy-tuned"
+    ],
+    [
+      1,
+      "priority",
+      "adaptive-no-preempt"
+    ],
+    [
+      1,
+      "dag",
+      "adaptive-no-preempt"
+    ],
+    [
+      1,
+      "priority",
+      "heft-ra-cap"
+    ],
+    [
+      1,
+      "priority",
+      "adaptive"
+    ],
+    [
+      1,
+      "dag",
+      "eft"
+    ],
+    [
+      1,
+      "dag",
+      "kube-default"
+    ],
+    [
+      1,
+      "dag",
+      "heft-ra-cap"
+    ],
+    [
+      1,
+      "dag",
+      "heft-ra"
+    ],
+    [
+      1,
+      "dag",
+      "adaptive"
+    ],
+    [
+      1,
+      "dag",
+      "legacy-v1"
+    ],
+    [
+      1,
+      "priority",
+      "eft"
+    ],
+    [
+      2,
+      "priority",
+      "legacy-v1"
+    ],
+    [
+      2,
+      "dag",
+      "heft"
+    ],
+    [
+      2,
+      "priority",
+      "heft"
+    ],
+    [
+      2,
+      "priority",
+      "adaptive"
+    ],
+    [
+      2,
+      "dag",
+      "adaptive-no-preempt"
+    ],
+    [
+      2,
+      "dag",
+      "legacy-tuned"
+    ],
+    [
+      2,
+      "priority",
+      "legacy-tuned"
+    ],
+    [
+      2,
+      "priority",
+      "heft-ra-cap"
+    ],
+    [
+      2,
+      "dag",
+      "heft-ra-cap"
+    ],
+    [
+      2,
+      "priority",
+      "heft-ra"
+    ],
+    [
+      2,
+      "dag",
+      "eft"
+    ],
+    [
+      2,
+      "dag",
+      "heft-ra"
+    ],
+    [
+      2,
+      "dag",
+      "legacy-v1"
+    ],
+    [
+      2,
+      "priority",
+      "kube-default"
+    ],
+    [
+      2,
+      "priority",
+      "adaptive-no-preempt"
+    ],
+    [
+      2,
+      "dag",
+      "adaptive"
+    ],
+    [
+      2,
+      "dag",
+      "kube-default"
+    ],
+    [
+      2,
+      "priority",
+      "eft"
+    ],
+    [
+      3,
+      "dag",
+      "legacy-tuned"
+    ],
+    [
+      3,
+      "priority",
+      "heft-ra-cap"
+    ],
+    [
+      3,
+      "priority",
+      "legacy-v1"
+    ],
+    [
+      3,
+      "priority",
+      "adaptive"
+    ],
+    [
+      3,
+      "dag",
+      "heft"
+    ],
+    [
+      3,
+      "priority",
+      "eft"
+    ],
+    [
+      3,
+      "dag",
+      "eft"
+    ],
+    [
+      3,
+      "priority",
+      "heft-ra"
+    ],
+    [
+      3,
+      "priority",
+      "kube-default"
+    ],
+    [
+      3,
+      "dag",
+      "heft-ra"
+    ],
+    [
+      3,
+      "dag",
+      "heft-ra-cap"
+    ],
+    [
+      3,
+      "dag",
+      "adaptive"
+    ],
+    [
+      3,
+      "dag",
+      "adaptive-no-preempt"
+    ],
+    [
+      3,
+      "priority",
+      "adaptive-no-preempt"
+    ],
+    [
+      3,
+      "priority",
+      "heft"
+    ],
+    [
+      3,
+      "dag",
+      "kube-default"
+    ],
+    [
+      3,
+      "priority",
+      "legacy-tuned"
+    ],
+    [
+      3,
+      "dag",
+      "legacy-v1"
+    ]
+  ],
+  "schema_version": 2,
+  "seed": 2026,
+  "started_at": "2026-11-01T12:58:18.846883Z",
+  "templates": [
+    "experiment-io",
+    "experiment-io-large",
+    "experiment-mem",
+    "experiment-cpu",
+    "experiment-cpu-long"
+  ],
+  "trials": []
+}

@@ -1,0 +1,119 @@
+[
+  {
+    "name": "build-control-plane",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-control-plane:v1",
+      "-f",
+      "C:\\Users\\bdumitrescu\\.copilot\\session-state\\d1b8eb9e-c336-4612-82cf-776ad8e74a45\\files\\control-plane-mirror.Dockerfile",
+      "."
+    ],
+    "started_at": "2026-11-01T12:46:51.9236401Z",
+    "finished_at": "2026-11-01T12:49:15.8678572Z",
+    "wall_seconds": 143.9400973,
+    "exit_code": 0,
+    "log": "build-control-plane.log"
+  },
+  {
+    "name": "build-fileserver",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-fileserver:v1",
+      "images\\fileserver"
+    ],
+    "started_at": "2026-11-01T12:49:15.9037968Z",
+    "finished_at": "2026-11-01T12:49:21.9897554Z",
+    "wall_seconds": 6.0855359,
+    "exit_code": 0,
+    "log": "build-fileserver.log"
+  },
+  {
+    "name": "build-bw-probe",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-bw-probe:v1",
+      "-f",
+      "C:\\Users\\bdumitrescu\\.copilot\\session-state\\d1b8eb9e-c336-4612-82cf-776ad8e74a45\\files\\bw-probe-mirror.Dockerfile",
+      "images\\bw-probe"
+    ],
+    "started_at": "2026-11-01T12:49:21.9937020Z",
+    "finished_at": "2026-11-01T12:50:52.2610991Z",
+    "wall_seconds": 90.2673197,
+    "exit_code": 0,
+    "log": "build-bw-probe.log"
+  },
+  {
+    "name": "build-thermal",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-thermal:v1",
+      "-f",
+      "C:\\Users\\bdumitrescu\\.copilot\\session-state\\d1b8eb9e-c336-4612-82cf-776ad8e74a45\\files\\thermal-mirror.Dockerfile",
+      "images\\thermal"
+    ],
+    "started_at": "2026-11-01T12:50:52.2628405Z",
+    "finished_at": "2026-11-01T12:50:57.6815505Z",
+    "wall_seconds": 5.4186214,
+    "exit_code": 0,
+    "log": "build-thermal.log"
+  },
+  {
+    "name": "build-task-io",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-task-io:v1",
+      "-f",
+      "tasks\\task_io\\Dockerfile",
+      "."
+    ],
+    "started_at": "2026-11-01T12:50:57.6834022Z",
+    "finished_at": "2026-11-01T12:50:59.8655384Z",
+    "wall_seconds": 2.1819736,
+    "exit_code": 0,
+    "log": "build-task-io.log"
+  },
+  {
+    "name": "build-task-mem",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-task-mem:v1",
+      "-f",
+      "tasks\\task_mem\\Dockerfile",
+      "."
+    ],
+    "started_at": "2026-11-01T12:50:59.8676936Z",
+    "finished_at": "2026-11-01T12:51:01.9195758Z",
+    "wall_seconds": 2.0518056,
+    "exit_code": 0,
+    "log": "build-task-mem.log"
+  },
+  {
+    "name": "build-task-cpu",
+    "executable": "docker",
+    "arguments": [
+      "build",
+      "-t",
+      "ts-task-cpu:v1",
+      "-f",
+      "tasks\\task_cpu\\Dockerfile",
+      "."
+    ],
+    "started_at": "2026-11-01T12:51:01.9219397Z",
+    "finished_at": "2026-11-01T12:51:03.8849768Z",
+    "wall_seconds": 1.9629707,
+    "exit_code": 0,
+    "log": "build-task-cpu.log"
+  }
+]

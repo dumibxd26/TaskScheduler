@@ -1,0 +1,85 @@
+{
+  "node_images": [
+    "kindest/node:<none> sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f 452d707d4862"
+  ],
+  "kubernetes_server": {
+    "major": "1",
+    "minor": "35",
+    "emulationMajor": "1",
+    "emulationMinor": "35",
+    "minCompatibilityMajor": "1",
+    "minCompatibilityMinor": "34",
+    "gitVersion": "v1.35.0",
+    "gitCommit": "66452049f3d692768c39c797b21b793dce80314e",
+    "gitTreeState": "clean",
+    "buildDate": "2025-12-17T12:32:07Z",
+    "goVersion": "go1.25.5",
+    "compiler": "gc",
+    "platform": "linux/amd64"
+  },
+  "images": [
+    {
+      "RepoTags": [
+        "ts-control-plane:v1"
+      ],
+      "Id": "sha256:23a54f58d7d6186a04047850a1e5d28d141f1c2ed300c6d80d751f5291c3dbe6",
+      "RepoDigests": [
+        "ts-control-plane@sha256:23a54f58d7d6186a04047850a1e5d28d141f1c2ed300c6d80d751f5291c3dbe6"
+      ]
+    },
+    {
+      "RepoTags": [
+        "ts-fileserver:v1"
+      ],
+      "Id": "sha256:3834078623d0ccaee2197a58e651732f3cef52fd30c159756718b0ee130fd5a0",
+      "RepoDigests": [
+        "ts-fileserver@sha256:3834078623d0ccaee2197a58e651732f3cef52fd30c159756718b0ee130fd5a0"
+      ]
+    },
+    {
+      "RepoTags": [
+        "ts-bw-probe:v1"
+      ],
+      "Id": "sha256:5218e677b5ed193c9e9da121934d3059ccf8f37ad524a604e5f3cd767d7b9bb3",
+      "RepoDigests": [
+        "ts-bw-probe@sha256:5218e677b5ed193c9e9da121934d3059ccf8f37ad524a604e5f3cd767d7b9bb3"
+      ]
+    },
+    {
+      "RepoTags": [
+        "ts-thermal:v1"
+      ],
+      "Id": "sha256:8f945cb62778234938557fe7e92dff515fed63d1af991b56c2cd737b407565ce",
+      "RepoDigests": [
+        "ts-thermal@sha256:8f945cb62778234938557fe7e92dff515fed63d1af991b56c2cd737b407565ce"
+      ]
+    },
+    {
+      "RepoTags": [
+        "ts-task-io:v1"
+      ],
+      "Id": "sha256:7a7cce1a95fdeb622ee658c251ff78e69344b397840892dbb5ad733f5336ecd7",
+      "RepoDigests": [
+        "ts-task-io@sha256:7a7cce1a95fdeb622ee658c251ff78e69344b397840892dbb5ad733f5336ecd7"
+      ]
+    },
+    {
+      "RepoTags": [
+        "ts-task-mem:v1"
+      ],
+      "Id": "sha256:25e0c4f8b3ab066f9241630ea7e65d28cd37d8bf74515d9ce2bb45d00d2ed4bb",
+      "RepoDigests": [
+        "ts-task-mem@sha256:25e0c4f8b3ab066f9241630ea7e65d28cd37d8bf74515d9ce2bb45d00d2ed4bb"
+      ]
+    },
+    {
+      "RepoTags": [
+        "ts-task-cpu:v1"
+      ],
+      "Id": "sha256:e44d097b1323158d6a582113c8ab74fb67756ef12a2042540f1c8c6b31cc2a1d",
+      "RepoDigests": [
+        "ts-task-cpu@sha256:e44d097b1323158d6a582113c8ab74fb67756ef12a2042540f1c8c6b31cc2a1d"
+      ]
+    }
+  ]
+}

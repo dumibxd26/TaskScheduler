@@ -1,0 +1,5 @@
+FROM python:3.11-alpine
+RUN pip install --no-cache-dir --index-url https://packagefeedproxy.microsoft.io/pypi/simple/ kubernetes==29.0.0
+WORKDIR /app
+COPY probe.py /app/probe.py
+ENTRYPOINT ["python3", "/app/probe.py"]

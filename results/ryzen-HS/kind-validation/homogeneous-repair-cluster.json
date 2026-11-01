@@ -1,0 +1,131 @@
+{
+  "created_at": "2026-11-01T17:20:30.495747Z",
+  "docker_caps": {
+    "ts-node-equal-1": {
+      "container": "ts-pc-8840hs-20261101-worker",
+      "cpu_shares": 2048,
+      "cpus": 1.35,
+      "memory_mib": 1024
+    },
+    "ts-node-equal-2": {
+      "container": "ts-pc-8840hs-20261101-worker2",
+      "cpu_shares": 2048,
+      "cpus": 1.35,
+      "memory_mib": 1024
+    },
+    "ts-node-equal-3": {
+      "container": "ts-pc-8840hs-20261101-worker3",
+      "cpu_shares": 2048,
+      "cpus": 1.35,
+      "memory_mib": 1024
+    }
+  },
+  "evidence_scope": "worker containers on one Docker host; capacities, speeds, and links are emulated, not independent hardware",
+  "kind_config": "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nname: ts-pc-8840hs-20261101\nnodes:\n- role: control-plane\n- role: worker\n  labels:\n    node-type: GENERAL\n    ts.capacity/cpu: '1'\n    ts.capacity/memory: '640'\n    ts.io/cooling-class: STANDARD\n    ts.io/thermal-throttle-c: '100'\n    ts.io/kind-profile: homogeneous\n  kubeadmConfigPatches:\n  - \"kind: JoinConfiguration\\nnodeRegistration:\\n  name: ts-node-equal-1\\n\"\n- role: worker\n  labels:\n    node-type: GENERAL\n    ts.capacity/cpu: '1'\n    ts.capacity/memory: '640'\n    ts.io/cooling-class: STANDARD\n    ts.io/thermal-throttle-c: '100'\n    ts.io/kind-profile: homogeneous\n  kubeadmConfigPatches:\n  - \"kind: JoinConfiguration\\nnodeRegistration:\\n  name: ts-node-equal-2\\n\"\n- role: worker\n  labels:\n    node-type: GENERAL\n    ts.capacity/cpu: '1'\n    ts.capacity/memory: '640'\n    ts.io/cooling-class: STANDARD\n    ts.io/thermal-throttle-c: '100'\n    ts.io/kind-profile: homogeneous\n  kubeadmConfigPatches:\n  - \"kind: JoinConfiguration\\nnodeRegistration:\\n  name: ts-node-equal-3\\n\"\n",
+  "mirrors": "homogeneous-4",
+  "network": [
+    {
+      "command": [
+        "docker",
+        "exec",
+        "ts-pc-8840hs-20261101-worker",
+        "tc",
+        "qdisc",
+        "replace",
+        "dev",
+        "eth0",
+        "root",
+        "netem",
+        "delay",
+        "4ms",
+        "rate",
+        "400mbit"
+      ],
+      "container": "ts-pc-8840hs-20261101-worker",
+      "delay_ms": 4.0,
+      "interface": "eth0",
+      "node": "ts-node-equal-1",
+      "observed": {
+        "delay_ms": 4.0,
+        "rate_mbit": 400.0
+      },
+      "observed_qdisc": "qdisc netem 8014: root refcnt 17 limit 1000 delay 4ms rate 400Mbit",
+      "rate_mbit": 400.0
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "ts-pc-8840hs-20261101-worker2",
+        "tc",
+        "qdisc",
+        "replace",
+        "dev",
+        "eth0",
+        "root",
+        "netem",
+        "delay",
+        "4ms",
+        "rate",
+        "400mbit"
+      ],
+      "container": "ts-pc-8840hs-20261101-worker2",
+      "delay_ms": 4.0,
+      "interface": "eth0",
+      "node": "ts-node-equal-2",
+      "observed": {
+        "delay_ms": 4.0,
+        "rate_mbit": 400.0
+      },
+      "observed_qdisc": "qdisc netem 8015: root refcnt 17 limit 1000 delay 4ms rate 400Mbit",
+      "rate_mbit": 400.0
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "ts-pc-8840hs-20261101-worker3",
+        "tc",
+        "qdisc",
+        "replace",
+        "dev",
+        "eth0",
+        "root",
+        "netem",
+        "delay",
+        "4ms",
+        "rate",
+        "400mbit"
+      ],
+      "container": "ts-pc-8840hs-20261101-worker3",
+      "delay_ms": 4.0,
+      "interface": "eth0",
+      "node": "ts-node-equal-3",
+      "observed": {
+        "delay_ms": 4.0,
+        "rate_mbit": 400.0
+      },
+      "observed_qdisc": "qdisc netem 8016: root refcnt 17 limit 1000 delay 4ms rate 400Mbit",
+      "rate_mbit": 400.0
+    }
+  ],
+  "profile": "homogeneous",
+  "schema_version": 1,
+  "speeds": {
+    "ts-node-equal-1": {
+      "cpu": 1.0,
+      "io": 1.0,
+      "memory": 1.0
+    },
+    "ts-node-equal-2": {
+      "cpu": 1.0,
+      "io": 1.0,
+      "memory": 1.0
+    },
+    "ts-node-equal-3": {
+      "cpu": 1.0,
+      "io": 1.0,
+      "memory": 1.0
+    }
+  }
+}

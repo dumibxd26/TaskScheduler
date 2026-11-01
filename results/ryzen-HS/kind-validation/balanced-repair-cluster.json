@@ -1,0 +1,170 @@
+{
+  "created_at": "2026-11-01T17:12:16.633220Z",
+  "docker_caps": {
+    "ts-node-cpu": {
+      "container": "ts-pc-8840hs-20261101-worker",
+      "cpu_shares": 2048,
+      "cpus": 1.35,
+      "memory_mib": 1024
+    },
+    "ts-node-edge": {
+      "container": "ts-pc-8840hs-20261101-worker4",
+      "cpu_shares": 1024,
+      "cpus": 0.85,
+      "memory_mib": 800
+    },
+    "ts-node-io": {
+      "container": "ts-pc-8840hs-20261101-worker3",
+      "cpu_shares": 1024,
+      "cpus": 0.85,
+      "memory_mib": 800
+    },
+    "ts-node-mem": {
+      "container": "ts-pc-8840hs-20261101-worker2",
+      "cpu_shares": 2048,
+      "cpus": 1.35,
+      "memory_mib": 1024
+    }
+  },
+  "evidence_scope": "worker containers on one Docker host; capacities, speeds, and links are emulated, not independent hardware",
+  "kind_config": "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nname: ts-pc-8840hs-20261101\nnodes:\n- role: control-plane\n- role: worker\n  labels:\n    node-type: CPU_OPT\n    ts.capacity/cpu: '1'\n    ts.capacity/memory: '640'\n    ts.io/cooling-class: STANDARD\n    ts.io/thermal-throttle-c: '100'\n    ts.io/kind-profile: balanced\n  kubeadmConfigPatches:\n  - \"kind: JoinConfiguration\\nnodeRegistration:\\n  name: ts-node-cpu\\n\"\n- role: worker\n  labels:\n    node-type: MEM_OPT\n    ts.capacity/cpu: '1'\n    ts.capacity/memory: '640'\n    ts.io/cooling-class: STANDARD\n    ts.io/thermal-throttle-c: '100'\n    ts.io/kind-profile: balanced\n  kubeadmConfigPatches:\n  - \"kind: JoinConfiguration\\nnodeRegistration:\\n  name: ts-node-mem\\n\"\n- role: worker\n  labels:\n    node-type: IO_OPT\n    ts.capacity/cpu: '0.5'\n    ts.capacity/memory: '384'\n    ts.io/cooling-class: STANDARD\n    ts.io/thermal-throttle-c: '100'\n    ts.io/kind-profile: balanced\n  kubeadmConfigPatches:\n  - \"kind: JoinConfiguration\\nnodeRegistration:\\n  name: ts-node-io\\n\"\n- role: worker\n  labels:\n    node-type: GENERAL\n    ts.capacity/cpu: '0.5'\n    ts.capacity/memory: '384'\n    ts.io/cooling-class: STANDARD\n    ts.io/thermal-throttle-c: '100'\n    ts.io/kind-profile: balanced\n  kubeadmConfigPatches:\n  - \"kind: JoinConfiguration\\nnodeRegistration:\\n  name: ts-node-edge\\n\"\n",
+  "mirrors": "balanced-heterogeneous-4",
+  "network": [
+    {
+      "command": [
+        "docker",
+        "exec",
+        "ts-pc-8840hs-20261101-worker",
+        "tc",
+        "qdisc",
+        "replace",
+        "dev",
+        "eth0",
+        "root",
+        "netem",
+        "delay",
+        "2ms",
+        "rate",
+        "800mbit"
+      ],
+      "container": "ts-pc-8840hs-20261101-worker",
+      "delay_ms": 2.0,
+      "interface": "eth0",
+      "node": "ts-node-cpu",
+      "observed": {
+        "delay_ms": 2.0,
+        "rate_mbit": 800.0
+      },
+      "observed_qdisc": "qdisc netem 8010: root refcnt 17 limit 1000 delay 2ms rate 800Mbit",
+      "rate_mbit": 800.0
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "ts-pc-8840hs-20261101-worker2",
+        "tc",
+        "qdisc",
+        "replace",
+        "dev",
+        "eth0",
+        "root",
+        "netem",
+        "delay",
+        "2ms",
+        "rate",
+        "800mbit"
+      ],
+      "container": "ts-pc-8840hs-20261101-worker2",
+      "delay_ms": 2.0,
+      "interface": "eth0",
+      "node": "ts-node-mem",
+      "observed": {
+        "delay_ms": 2.0,
+        "rate_mbit": 800.0
+      },
+      "observed_qdisc": "qdisc netem 8011: root refcnt 17 limit 1000 delay 2ms rate 800Mbit",
+      "rate_mbit": 800.0
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "ts-pc-8840hs-20261101-worker3",
+        "tc",
+        "qdisc",
+        "replace",
+        "dev",
+        "eth0",
+        "root",
+        "netem",
+        "delay",
+        "2ms",
+        "rate",
+        "800mbit"
+      ],
+      "container": "ts-pc-8840hs-20261101-worker3",
+      "delay_ms": 2.0,
+      "interface": "eth0",
+      "node": "ts-node-io",
+      "observed": {
+        "delay_ms": 2.0,
+        "rate_mbit": 800.0
+      },
+      "observed_qdisc": "qdisc netem 8012: root refcnt 17 limit 1000 delay 2ms rate 800Mbit",
+      "rate_mbit": 800.0
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "ts-pc-8840hs-20261101-worker4",
+        "tc",
+        "qdisc",
+        "replace",
+        "dev",
+        "eth0",
+        "root",
+        "netem",
+        "delay",
+        "10ms",
+        "rate",
+        "60mbit"
+      ],
+      "container": "ts-pc-8840hs-20261101-worker4",
+      "delay_ms": 10.0,
+      "interface": "eth0",
+      "node": "ts-node-edge",
+      "observed": {
+        "delay_ms": 10.0,
+        "rate_mbit": 60.0
+      },
+      "observed_qdisc": "qdisc netem 8013: root refcnt 17 limit 1000 delay 10ms rate 60Mbit",
+      "rate_mbit": 60.0
+    }
+  ],
+  "profile": "balanced",
+  "schema_version": 1,
+  "speeds": {
+    "ts-node-cpu": {
+      "cpu": 1.0,
+      "io": 0.5,
+      "memory": 0.55
+    },
+    "ts-node-edge": {
+      "cpu": 0.3,
+      "io": 0.3,
+      "memory": 0.3
+    },
+    "ts-node-io": {
+      "cpu": 0.4,
+      "io": 1.0,
+      "memory": 0.5
+    },
+    "ts-node-mem": {
+      "cpu": 0.45,
+      "io": 0.55,
+      "memory": 1.0
+    }
+  }
+}

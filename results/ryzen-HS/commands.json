@@ -1,0 +1,272 @@
+[
+  {
+    "name": "closed-exploratory-s0-19",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "run_experiment_lab.py",
+      "run",
+      "--seeds",
+      "0:20",
+      "--sample-uncertainty",
+      "--uncertainty-floor",
+      "0",
+      "--policies",
+      "fcfs,random,eft,heft,heft-ra,heft-ra-cap,k8s-default,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive",
+      "--quiet",
+      "--output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\sim\\closed-exploratory-s0-19",
+      "--oracle-max-tasks",
+      "3"
+    ],
+    "started_at": "2026-11-01T12:26:06.6933982Z",
+    "finished_at": "2026-11-01T12:27:16.4611382Z",
+    "wall_seconds": 69.7659288,
+    "exit_code": 0,
+    "log": "closed-exploratory-s0-19.log"
+  },
+  {
+    "name": "workload-exploratory-s0-19",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "run_experiment_lab.py",
+      "workload",
+      "--seeds",
+      "0:20",
+      "--sample-uncertainty",
+      "--uncertainty-floor",
+      "0",
+      "--policies",
+      "fcfs,random,eft,heft,heft-ra,heft-ra-cap,k8s-default,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive",
+      "--quiet",
+      "--output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\sim\\workload-exploratory-s0-19"
+    ],
+    "started_at": "2026-11-01T12:27:16.4849014Z",
+    "finished_at": "2026-11-01T12:28:33.6396345Z",
+    "wall_seconds": 77.1541883,
+    "exit_code": 0,
+    "log": "workload-exploratory-s0-19.log"
+  },
+  {
+    "name": "closed-confirmatory-s200-249",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "run_experiment_lab.py",
+      "run",
+      "--seeds",
+      "200:250",
+      "--sample-uncertainty",
+      "--uncertainty-floor",
+      "0.1",
+      "--policies",
+      "eft,heft,heft-ra,heft-ra-cap,k8s-default,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive",
+      "--quiet",
+      "--output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\sim\\closed-confirmatory-s200-249"
+    ],
+    "started_at": "2026-11-01T12:28:33.6433770Z",
+    "finished_at": "2026-11-01T12:30:51.6129355Z",
+    "wall_seconds": 137.9694512,
+    "exit_code": 0,
+    "log": "closed-confirmatory-s200-249.log"
+  },
+  {
+    "name": "workload-confirmatory-s200-249",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "run_experiment_lab.py",
+      "workload",
+      "--seeds",
+      "200:250",
+      "--sample-uncertainty",
+      "--uncertainty-floor",
+      "0.1",
+      "--policies",
+      "eft,heft,heft-ra,heft-ra-cap,k8s-default,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive",
+      "--quiet",
+      "--output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\sim\\workload-confirmatory-s200-249"
+    ],
+    "started_at": "2026-11-01T12:30:51.6151857Z",
+    "finished_at": "2026-11-01T12:33:44.6569238Z",
+    "wall_seconds": 173.0415688,
+    "exit_code": 0,
+    "log": "workload-confirmatory-s200-249.log"
+  },
+  {
+    "name": "closed-holdout-s400-449",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "run_experiment_lab.py",
+      "run",
+      "--seeds",
+      "400:450",
+      "--sample-uncertainty",
+      "--uncertainty-floor",
+      "0.1",
+      "--policies",
+      "eft,heft,heft-ra,heft-ra-cap,k8s-default,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive",
+      "--quiet",
+      "--output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\sim\\closed-holdout-s400-449"
+    ],
+    "started_at": "2026-11-01T12:33:44.6597012Z",
+    "finished_at": "2026-11-01T12:35:54.7255079Z",
+    "wall_seconds": 130.0657087,
+    "exit_code": 0,
+    "log": "closed-holdout-s400-449.log"
+  },
+  {
+    "name": "workload-holdout-s400-449",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "run_experiment_lab.py",
+      "workload",
+      "--seeds",
+      "400:450",
+      "--sample-uncertainty",
+      "--uncertainty-floor",
+      "0.1",
+      "--policies",
+      "eft,heft,heft-ra,heft-ra-cap,k8s-default,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive",
+      "--quiet",
+      "--output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\sim\\workload-holdout-s400-449"
+    ],
+    "started_at": "2026-11-01T12:35:54.7271717Z",
+    "finished_at": "2026-11-01T12:38:44.6883554Z",
+    "wall_seconds": 169.9611003,
+    "exit_code": 0,
+    "log": "workload-holdout-s400-449.log"
+  },
+  {
+    "name": "closed-holdout2-s600-649",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "run_experiment_lab.py",
+      "run",
+      "--seeds",
+      "600:650",
+      "--sample-uncertainty",
+      "--uncertainty-floor",
+      "0.1",
+      "--policies",
+      "eft,heft,heft-ra,heft-ra-cap,k8s-default,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive",
+      "--quiet",
+      "--output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\sim\\closed-holdout2-s600-649"
+    ],
+    "started_at": "2026-11-01T12:38:44.6906807Z",
+    "finished_at": "2026-11-01T12:40:53.5620279Z",
+    "wall_seconds": 128.8712208,
+    "exit_code": 0,
+    "log": "closed-holdout2-s600-649.log"
+  },
+  {
+    "name": "workload-holdout2-s600-649",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "run_experiment_lab.py",
+      "workload",
+      "--seeds",
+      "600:650",
+      "--sample-uncertainty",
+      "--uncertainty-floor",
+      "0.1",
+      "--policies",
+      "eft,heft,heft-ra,heft-ra-cap,k8s-default,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive",
+      "--quiet",
+      "--output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\sim\\workload-holdout2-s600-649"
+    ],
+    "started_at": "2026-11-01T12:40:53.5642135Z",
+    "finished_at": "2026-11-01T12:43:52.4141952Z",
+    "wall_seconds": 178.8498758,
+    "exit_code": 0,
+    "log": "workload-holdout2-s600-649.log"
+  },
+  {
+    "name": "mechanism-studies",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "run_mechanism_studies.py",
+      "--output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\mechanism-studies.json"
+    ],
+    "started_at": "2026-11-01T12:43:52.4159068Z",
+    "finished_at": "2026-11-01T12:45:09.1744459Z",
+    "wall_seconds": 76.7584456,
+    "exit_code": 0,
+    "log": "mechanism-studies.log"
+  },
+  {
+    "name": "legacy-weight-search",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "tune_legacy_weights.py",
+      "--candidates",
+      "256",
+      "--finalists",
+      "25",
+      "--quiet",
+      "--output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\legacy-weight-search.json"
+    ],
+    "started_at": "2026-11-01T12:45:09.1858862Z",
+    "finished_at": "2026-11-01T12:45:38.4621081Z",
+    "wall_seconds": 29.2761545,
+    "exit_code": 0,
+    "log": "legacy-weight-search.log"
+  },
+  {
+    "name": "legacy-factor-ablation",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "run_legacy_ablation.py",
+      "--seeds",
+      "300:310",
+      "--output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\legacy-factor-ablation.json"
+    ],
+    "started_at": "2026-11-01T12:45:38.4637762Z",
+    "finished_at": "2026-11-01T12:45:53.7793960Z",
+    "wall_seconds": 15.3155624,
+    "exit_code": 0,
+    "log": "legacy-factor-ablation.log"
+  },
+  {
+    "name": "legacy-factor-stress",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "run_legacy_factor_stress.py",
+      "--output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\legacy-factor-stress.json"
+    ],
+    "started_at": "2026-11-01T12:45:53.7810998Z",
+    "finished_at": "2026-11-01T12:45:53.9980856Z",
+    "wall_seconds": 0.2169336,
+    "exit_code": 0,
+    "log": "legacy-factor-stress.log"
+  },
+  {
+    "name": "contextual-policy-search",
+    "executable": "C:\\work_proj\\TaskScheduler\\.venv\\Scripts\\python.exe",
+    "arguments": [
+      "tune_contextual_policy.py",
+      "--candidates",
+      "64",
+      "--thermal-step",
+      "60",
+      "--quiet",
+      "--profile-output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\contextual-v1.yaml",
+      "--report-output",
+      "C:\\work_proj\\TaskScheduler\\results\\pc-ryzen-8840hs-2026-11-01\\contextual-policy-search.json"
+    ],
+    "started_at": "2026-11-01T12:45:53.9996061Z",
+    "finished_at": "2026-11-01T12:46:35.9838179Z",
+    "wall_seconds": 41.9841433,
+    "exit_code": 0,
+    "log": "contextual-policy-search.log"
+  }
+]

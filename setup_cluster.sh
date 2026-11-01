@@ -3,32 +3,32 @@
 # TaskScheduler cluster bootstrap.
 #
 # Usage:
-#     ./setup_cluster.sh small   # 3 workers, ~3.3 GB total — Mac mini / 8 GB
-#     ./setup_cluster.sh big     # 6 workers, ~32  GB total — 32+ GB workstation
-#     ./setup_cluster.sh homogeneous  # 3 equal workers, ~3.75 GB total
-#     ./setup_cluster.sh skewed       # 3 strongly asymmetric workers, ~3.75 GB
-#     ./setup_cluster.sh         # defaults to "small" (safest)
+#     ./setup_cluster.sh small        # 3 demo workers (one of each type)
+#     ./setup_cluster.sh big          # 6 demo workers, needs a 32+ GB host
+#     ./setup_cluster.sh balanced     # emulated validation profiles defined in
+#     ./setup_cluster.sh homogeneous  #   clusters/kind_profiles.yaml (speeds,
+#     ./setup_cluster.sh edge         #   slots, netem links) via kind_lab.py
+#     ./setup_cluster.sh              # defaults to "small"
 #
-# Both profiles produce a cluster named ts-cluster, so subsequent commands
-# (kubectl, kind, submit_workflows.py) do not need to know which profile
-# was chosen.
+# Every profile produces a cluster named ts-cluster.
 # ─────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 PROFILE="${1:-small}"
 CLUSTER_NAME="ts-cluster"
+PYTHON="${PYTHON:-python}"
 
 case "${PROFILE}" in
     small)       CONFIG_FILE="clusters/small_cluster.yaml" ;;
     big)         CONFIG_FILE="clusters/big_cluster.yaml" ;;
-    homogeneous) CONFIG_FILE="clusters/kind_homogeneous.yaml" ;;
-    skewed)      CONFIG_FILE="clusters/kind_resource_skewed.yaml" ;;
+    balanced|homogeneous|edge)
+        exec "${PYTHON}" kind_lab.py create "${PROFILE}" ;;
     *)
-        echo "Usage: $0 [small|big|homogeneous|skewed]" >&2
-        echo "  small  3 workers (one of each type) — fits 8 GB host" >&2
-        echo "  big    6 workers (two of each type) — needs 32+ GB host" >&2
-        echo "  homogeneous  3 equal workers — single-host validation" >&2
-        echo "  skewed  3 asymmetric workers — single-host validation" >&2
+        echo "Usage: $0 [small|big|balanced|homogeneous|edge]" >&2
+        echo "  small        3 demo workers (one of each type)" >&2
+        echo "  big          6 demo workers (two of each type), 32+ GB host" >&2
+        echo "  balanced, homogeneous, edge" >&2
+        echo "               emulated validation profiles (kind_lab.py)" >&2
         exit 2
         ;;
 esac
@@ -63,18 +63,6 @@ if [[ "${PROFILE}" == "small" ]]; then
     echo "    ts-node-mem-1  (MEM_OPT) -> 1 CPU,  1.5 GB"
     docker update --cpus=1 --memory=768m  --memory-swap=768m  "${CLUSTER_NAME}-worker3"
     echo "    ts-node-io-1   (IO_OPT)  -> 1 CPU,  0.75 GB"
-elif [[ "${PROFILE}" == "homogeneous" ]]; then
-    docker update --cpus=1.25 --memory=1280m --memory-swap=1280m "${CLUSTER_NAME}-worker"
-    docker update --cpus=1.25 --memory=1280m --memory-swap=1280m "${CLUSTER_NAME}-worker2"
-    docker update --cpus=1.25 --memory=1280m --memory-swap=1280m "${CLUSTER_NAME}-worker3"
-    echo "    ts-node-equal-{1,2,3} -> 1.25 CPUs, 1.25 GB each"
-elif [[ "${PROFILE}" == "skewed" ]]; then
-    docker update --cpus=2.5  --memory=1280m --memory-swap=1280m "${CLUSTER_NAME}-worker"
-    echo "    ts-node-cpu-fast  (CPU_OPT) -> 2.5 CPUs, 1.25 GB"
-    docker update --cpus=0.75 --memory=1792m --memory-swap=1792m "${CLUSTER_NAME}-worker2"
-    echo "    ts-node-mem-large (MEM_OPT) -> 0.75 CPU, 1.75 GB"
-    docker update --cpus=0.75 --memory=768m  --memory-swap=768m  "${CLUSTER_NAME}-worker3"
-    echo "    ts-node-io-fast   (IO_OPT)  -> 0.75 CPU, 0.75 GB"
 else
     # 6 workers — total ≈ 32 GB (needs ≥ 32 GB host, 64 GB recommended)
     docker update --cpus=4 --memory=4g --memory-swap=4g "${CLUSTER_NAME}-worker"

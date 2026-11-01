@@ -18,6 +18,7 @@ from simulation.policies import (
     _commit,
     _planned_tasks,
     _scheduling_units,
+    task_priority,
 )
 from simulation.schema import ClusterSpec, TaskSpec, WorkflowSpec
 
@@ -97,6 +98,12 @@ class LegacyScoringPolicy:
         self.profile_store = profile_store or ProfileStore()
         self.algorithm = PlacementAlgorithm(self.profile_store, weights)
         self._placed_at: dict[str, float] = {}
+        # Every factor is bounded above by its positive weight (penalties are
+        # <= 0), so this ceiling turns the maximized score into a non-negative
+        # cost without changing which node or gang assignment is best.
+        self._score_ceiling = sum(
+            max(0.0, float(getattr(weights, field)))
+            for field in weights.__dataclass_fields__)
 
     @staticmethod
     def _template(snapshot: SchedulerSnapshot, task: TaskSpec) -> TaskTemplate:
@@ -180,7 +187,7 @@ class LegacyScoringPolicy:
         node = self._live_node(snapshot, task, node_view, co_runners)
         detail = self.algorithm.score_node(
             live_task, template, node, live_task.parent_node_ids)
-        return -detail["total"]
+        return max(0.0, self._score_ceiling - detail["total"])
 
     def schedule(self, snapshot: SchedulerSnapshot) -> list[Placement]:
         free_cpu, free_memory = _available(snapshot)
@@ -193,7 +200,7 @@ class LegacyScoringPolicy:
         ordered = sorted(
             snapshot.ready_tasks,
             key=lambda task: (
-                -(task.priority or snapshot.workflow.priority).value,
+                -task_priority(task, snapshot.workflow).value,
                 workflow_order[task.task_id],
             ),
         )

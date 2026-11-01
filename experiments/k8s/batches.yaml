@@ -1,0 +1,129 @@
+# Live validation batches (shared by run_k8s_experiment.py and the
+# simulator twins in simulation/kind_twin.py).
+#
+# arrival: "start" submits at the beginning of the trial; "delayed" submits
+# after priority_delay_s. DATA dependencies move the parent's output file
+# (Channel A field generated_file_path) across the emulated network.
+schema_version: 1
+priority_delay_s: 7
+batches:
+  priority:
+    description: >-
+      Best-effort pressure fills the cluster, then a critical workflow and
+      three batch workflows arrive. Probes priority handling and preemption.
+    workflows:
+      - name: pressure
+        priority: BEST_EFFORT
+        workflow_class: BURST
+        preemptable: true
+        arrival: start
+        tasks:
+          - {name: long-1, template: experiment-cpu-long}
+          - {name: long-2, template: experiment-cpu-long}
+          - {name: long-3, template: experiment-cpu-long}
+          - {name: long-4, template: experiment-cpu-long}
+          - {name: long-5, template: experiment-cpu-long}
+          - {name: long-6, template: experiment-cpu-long}
+      - name: critical
+        priority: CRITICAL
+        workflow_class: BURST
+        preemptable: false
+        arrival: delayed
+        tasks:
+          - {name: urgent-1, template: experiment-cpu}
+          - {name: urgent-2, template: experiment-cpu}
+      - name: pipeline
+        priority: BATCH
+        workflow_class: PIPELINE
+        preemptable: true
+        arrival: delayed
+        tasks:
+          - {name: ingest, template: experiment-io}
+          - {name: stage, template: experiment-mem,
+             dependsOn: [{parent: ingest, dependencyType: DATA, dataFields: [generated_file_path]}]}
+          - {name: crunch, template: experiment-cpu,
+             dependsOn: [{parent: stage, dependencyType: DATA, dataFields: [processed_array_size]}]}
+      - name: fanout
+        priority: BATCH
+        workflow_class: BATCH
+        preemptable: true
+        arrival: delayed
+        tasks:
+          - {name: source, template: experiment-io}
+          - {name: leaf-1, template: experiment-cpu,
+             dependsOn: [{parent: source, dependencyType: DATA, dataFields: [generated_file_path]}]}
+          - {name: leaf-2, template: experiment-cpu,
+             dependsOn: [{parent: source, dependencyType: DATA, dataFields: [generated_file_path]}]}
+          - {name: leaf-3, template: experiment-cpu,
+             dependsOn: [{parent: source, dependencyType: DATA, dataFields: [generated_file_path]}]}
+          - {name: leaf-4, template: experiment-cpu,
+             dependsOn: [{parent: source, dependencyType: DATA, dataFields: [generated_file_path]}]}
+      - name: parallel
+        priority: BATCH
+        workflow_class: BATCH
+        preemptable: true
+        arrival: delayed
+        tasks:
+          - {name: io, template: experiment-io}
+          - {name: memory, template: experiment-mem}
+          - {name: cpu-1, template: experiment-cpu}
+          - {name: cpu-2, template: experiment-cpu}
+  dag:
+    description: >-
+      Four same-priority DAGs arrive together: a data pipeline, a data-heavy
+      fan-out, a fork-join, and independent mixed tasks. Probes
+      heterogeneity-aware placement, DAG ordering, and data locality.
+    workflows:
+      - name: dag-pipeline
+        priority: BATCH
+        workflow_class: PIPELINE
+        preemptable: true
+        arrival: start
+        tasks:
+          - {name: ingest, template: experiment-io-large}
+          - {name: stage, template: experiment-mem,
+             dependsOn: [{parent: ingest, dependencyType: DATA, dataFields: [generated_file_path]}]}
+          - {name: crunch, template: experiment-cpu,
+             dependsOn: [{parent: stage, dependencyType: DATA, dataFields: [processed_array_size]}]}
+      - name: dag-fanout
+        priority: BATCH
+        workflow_class: BATCH
+        preemptable: true
+        arrival: start
+        tasks:
+          - {name: source, template: experiment-io-large}
+          - {name: leaf-1, template: experiment-cpu,
+             dependsOn: [{parent: source, dependencyType: DATA, dataFields: [generated_file_path]}]}
+          - {name: leaf-2, template: experiment-cpu,
+             dependsOn: [{parent: source, dependencyType: DATA, dataFields: [generated_file_path]}]}
+          - {name: leaf-3, template: experiment-cpu,
+             dependsOn: [{parent: source, dependencyType: DATA, dataFields: [generated_file_path]}]}
+          - {name: leaf-4, template: experiment-cpu,
+             dependsOn: [{parent: source, dependencyType: DATA, dataFields: [generated_file_path]}]}
+      - name: dag-forkjoin
+        priority: BATCH
+        workflow_class: BATCH
+        preemptable: true
+        arrival: start
+        tasks:
+          - {name: split, template: experiment-io}
+          - {name: branch-cpu, template: experiment-cpu,
+             dependsOn: [{parent: split, dependencyType: DATA, dataFields: [generated_file_path]}]}
+          - {name: branch-mem, template: experiment-mem,
+             dependsOn: [{parent: split, dependencyType: DATA, dataFields: [generated_file_path]}]}
+          - {name: branch-io, template: experiment-io,
+             dependsOn: [{parent: split, dependencyType: EXECUTION}]}
+          - {name: join, template: experiment-cpu,
+             dependsOn: [{parent: branch-cpu, dependencyType: EXECUTION},
+                         {parent: branch-mem, dependencyType: EXECUTION},
+                         {parent: branch-io, dependencyType: EXECUTION}]}
+      - name: dag-parallel
+        priority: BATCH
+        workflow_class: BATCH
+        preemptable: true
+        arrival: start
+        tasks:
+          - {name: cpu-1, template: experiment-cpu}
+          - {name: cpu-2, template: experiment-cpu}
+          - {name: memory, template: experiment-mem}
+          - {name: io, template: experiment-io}

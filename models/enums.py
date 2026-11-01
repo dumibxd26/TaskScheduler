@@ -35,6 +35,9 @@ class TaskState(Enum):
     RUNNING = auto()   # Actively executing
     FINISHED = auto()  # Completed successfully
     FAILED = auto()
+    # Killed by preemption; in Kubernetes the controller recreates the Pod and
+    # the scheduler waits for that new Pending Pod instead of re-queueing.
+    PREEMPTED = auto()
 
 class WorkflowState(Enum):
     QUEUED = auto()    # Waiting for admission control

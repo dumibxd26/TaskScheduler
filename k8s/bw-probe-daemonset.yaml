@@ -42,6 +42,10 @@ spec:
                   fieldPath: metadata.namespace
             - name: TS_PROBE_INTERVAL_S
               value: "600"
+            # Serialize probe rounds across nodes in 60 s wall-clock slots so
+            # concurrent downloads do not share a source's egress link.
+            - name: TS_PROBE_STAGGER_S
+              value: "60"
             - name: TS_PROBE_TIMEOUT_S
               value: "60"
           resources:

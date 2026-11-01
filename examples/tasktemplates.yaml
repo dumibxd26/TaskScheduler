@@ -12,6 +12,12 @@ spec:
   taskClass: IO_BOUND
   cpuRequest: "0.5"
   memoryRequest: "512Mi"
+  physicalResources:
+    cpuRequest: "250m"
+    memoryRequest: "192Mi"
+    cpuLimit: "500m"
+    memoryLimit: "320Mi"
+  emulation: {workScale: 0.25, timeScale: 0.25}
   compatibleNodeTypes: [IO_OPT, GENERAL]
   expectedOutputBytes: 104857600   # ~100 MB
 ---
@@ -25,6 +31,12 @@ spec:
   taskClass: MEMORY_BOUND
   cpuRequest: "0.5"
   memoryRequest: "768Mi"
+  physicalResources:
+    cpuRequest: "250m"
+    memoryRequest: "128Mi"
+    cpuLimit: "500m"
+    memoryLimit: "384Mi"
+  emulation: {workScale: 0.25, timeScale: 0.25}
   compatibleNodeTypes: [MEM_OPT, GENERAL]
   expectedOutputBytes: 1024        # small metadata only
 ---
@@ -38,5 +50,11 @@ spec:
   taskClass: CPU_BOUND
   cpuRequest: "1.0"
   memoryRequest: "256Mi"
+  physicalResources:
+    cpuRequest: "500m"
+    memoryRequest: "96Mi"
+    cpuLimit: "1"
+    memoryLimit: "192Mi"
+  emulation: {workScale: 0.25, timeScale: 0.25}
   compatibleNodeTypes: [CPU_OPT, GENERAL]
   expectedOutputBytes: 256

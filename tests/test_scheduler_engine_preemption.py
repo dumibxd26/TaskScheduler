@@ -100,10 +100,125 @@ def test_engine_applies_accepted_preemption_and_releases_capacity():
     engine.run_tick(cluster)
 
     assert callbacks == ["victim"]
-    assert victim.state == TaskState.WAITING
+    # With a live delete callback the controller recreates the Pod, so the
+    # engine must not make the victim schedulable again by itself.
+    assert victim.state == TaskState.PREEMPTED
     assert victim.assigned_node_id is None
     assert victim.preemption_count == 1
     assert node.active_tasks == {}
     assert node.free_cpu == 4
     assert node.free_memory == 4096
     assert policy.recorded[0][:2] == ("node-a", "victim")
+
+
+def test_in_process_preemption_requeues_victim_without_callback():
+    store = ProfileStore()
+    runner = WorkflowSchedulerRunner(store, PlacementAlgorithm(store))
+    queue = QueueManager()
+    victim = TaskInstance(
+        task_instance_id="victim", workflow_instance_id="workflow-1",
+        task_template_id="victim-template", state=TaskState.RUNNING,
+        assigned_node_id="node-a")
+    workflow = WorkflowInstance(
+        workflow_instance_id="workflow-1", workflow_template_id="workflow-template",
+        workflow_class=WorkflowClass.BATCH, priority=PriorityClass.BATCH,
+        preemptable=True, task_instances={"victim": victim},
+        state=WorkflowState.RUNNING)
+    queue.admitted_workflows["workflow-1"] = workflow
+    template = TaskTemplate(
+        task_template_id="victim-template", name="victim",
+        task_class=TaskClass.CPU_BOUND, cpu_request=2, memory_request=512,
+        image_name="task:v1", compatible_node_types=[NodeType.GENERAL])
+    workflow_template = WorkflowTemplate(
+        workflow_template_id="workflow-template", name="workflow",
+        workflow_class=WorkflowClass.BATCH, default_priority=PriorityClass.BATCH,
+        default_preemptable=True, tasks={"victim-template": template})
+    node = Node(node_id="node-a", node_type=NodeType.GENERAL, total_cpu=4,
+                total_memory=4096, free_cpu=4, free_memory=4096)
+    node.register_task("victim-template", "victim", cpu_request=2,
+                       memory_request=512)
+    cluster = ClusterScenario(scenario_id="t", name="t", description="",
+                              nodes=[node])
+    engine = SchedulerEngine(queue, ReadinessResolver(), runner,
+                             {"workflow-template": workflow_template},
+                             policy=PreemptingPolicy())
+
+    engine.run_tick(cluster)
+
+    assert victim.state == TaskState.WAITING
+
+
+class PlacingPolicy:
+    def decide(self, state):
+        from services.policy import _register
+
+        entry = state.sorted_tasks[0]
+        node = state.cluster.nodes[0]
+        tmpl = state.workflow_templates[
+            entry.workflow.workflow_template_id].tasks[entry.task_template_id]
+        return ActionSet(place=[_register(state, entry, node, tmpl)])
+
+
+def _single_task_setup():
+    store = ProfileStore()
+    runner = WorkflowSchedulerRunner(store, PlacementAlgorithm(store))
+    queue = QueueManager()
+    task = TaskInstance(task_instance_id="pod-1", workflow_instance_id="wf",
+                        task_template_id="tmpl")
+    workflow = WorkflowInstance(
+        workflow_instance_id="wf", workflow_template_id="wf",
+        workflow_class=WorkflowClass.BATCH, priority=PriorityClass.BATCH,
+        preemptable=True, task_instances={"pod-1": task},
+        state=WorkflowState.RUNNING)
+    queue.admitted_workflows["wf"] = workflow
+    queue.enqueue_ready_tasks([task], workflow)
+    template = TaskTemplate(
+        task_template_id="tmpl", name="t", task_class=TaskClass.CPU_BOUND,
+        cpu_request=1, memory_request=256, image_name="img",
+        compatible_node_types=[NodeType.GENERAL])
+    templates = {"wf": WorkflowTemplate(
+        workflow_template_id="wf", name="wf", workflow_class=WorkflowClass.BATCH,
+        default_priority=PriorityClass.BATCH, default_preemptable=True,
+        tasks={"tmpl": template})}
+    node = Node(node_id="node-a", node_type=NodeType.GENERAL, total_cpu=2,
+                total_memory=1024, free_cpu=2, free_memory=1024)
+    cluster = ClusterScenario(scenario_id="t", name="t", description="",
+                              nodes=[node])
+    return queue, runner, task, templates, node, cluster
+
+
+def test_failed_binding_rolls_back_reservation_and_keeps_task_queued():
+    queue, runner, task, templates, node, cluster = _single_task_setup()
+    engine = SchedulerEngine(
+        queue, ReadinessResolver(), runner, templates, policy=PlacingPolicy(),
+        bind_task=lambda task_id, node_id: "retry", resolve_dependencies=False)
+
+    engine.run_tick(cluster)
+
+    assert node.active_tasks == {}
+    assert node.free_cpu == 2
+    assert task.state == TaskState.READY
+    assert [entry.task.task_instance_id for entry in queue.task_entries] == ["pod-1"]
+
+
+def test_successful_binding_dispatches_and_dropped_pod_leaves_queue():
+    queue, runner, task, templates, node, cluster = _single_task_setup()
+    engine = SchedulerEngine(
+        queue, ReadinessResolver(), runner, templates, policy=PlacingPolicy(),
+        bind_task=lambda task_id, node_id: "bound", resolve_dependencies=False)
+
+    engine.run_tick(cluster)
+
+    assert task.state == TaskState.RUNNING
+    assert task.assigned_node_id == "node-a"
+    assert queue.task_entries == []
+    assert node.free_cpu == 1
+
+    queue, runner, task, templates, node, cluster = _single_task_setup()
+    engine = SchedulerEngine(
+        queue, ReadinessResolver(), runner, templates, policy=PlacingPolicy(),
+        bind_task=lambda task_id, node_id: "drop", resolve_dependencies=False)
+    engine.run_tick(cluster)
+
+    assert queue.task_entries == []
+    assert node.free_cpu == 2

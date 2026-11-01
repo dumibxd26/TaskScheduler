@@ -3,9 +3,11 @@ ts-thermal — every TS_THERMAL_INTERVAL_S, read the node's CPU temperature
 from ``/sys/class/thermal/thermal_zone0/temp`` (millicelsius) and publish
 it as a Node annotation ``ts.io/cpu-temp-c``.
 
-On systems without that sysfs file (e.g. macOS hosts running kind), we
-emit a synthetic value derived from load average so the rest of the
-pipeline can still be exercised end-to-end.
+On hosts without a thermal zone (Docker Desktop/WSL2, macOS kind) the
+annotation is removed, so the scheduler treats temperature as unknown. A
+load-average-derived synthetic value can be enabled for demonstrations with
+``TS_THERMAL_SYNTHETIC_FALLBACK=true``; it is not evidence, because every
+container on one host shares the same load average.
 
 The scheduler's ThermalCollector (services/thermal.py) consumes these
 annotations to determine the thermal bucket (cold/warm/hot/throttle).
@@ -26,6 +28,9 @@ from kubernetes.client.rest import ApiException
 NAMESPACE = os.environ.get("TS_NAMESPACE", "ts-system")
 SELF_NODE = os.environ.get("TS_NODE_NAME", socket.gethostname())
 INTERVAL_S = float(os.environ.get("TS_THERMAL_INTERVAL_S", "30"))
+# Opt-in only: a load-derived temperature is useful for demos, not evidence.
+SYNTHETIC_FALLBACK = os.environ.get(
+    "TS_THERMAL_SYNTHETIC_FALLBACK", "false").lower() == "true"
 
 # Sysfs paths to try in order; first one that exists wins.
 SYSFS_CANDIDATES = [
@@ -79,19 +84,35 @@ def _annotate_self(core: client.CoreV1Api, temp_c: float):
         print(f"[THERM] node patch failed: {e.reason}")
 
 
+def _clear_self(core: client.CoreV1Api):
+    """Remove a stale temperature so the scheduler sees 'not measurable'."""
+    body = {"metadata": {"annotations": {"ts.io/cpu-temp-c": None}}}
+    try:
+        core.patch_node(name=SELF_NODE, body=body)
+    except ApiException as e:
+        print(f"[THERM] node patch failed: {e.reason}")
+
+
 def main():
-    print(f"[THERM] ts-thermal started on node={SELF_NODE} interval={INTERVAL_S}s")
+    print(f"[THERM] ts-thermal started on node={SELF_NODE} interval={INTERVAL_S}s "
+          f"synthetic_fallback={SYNTHETIC_FALLBACK}")
     _load_k8s()
     core = client.CoreV1Api()
     while True:
         try:
             t = _read_temp_c()
             source = "sysfs"
-            if t is None:
+            if t is None and SYNTHETIC_FALLBACK:
                 t = _synthetic_temp_c()
                 source = "synthetic"
-            print(f"[THERM] {SELF_NODE}: {t:.1f}°C ({source})")
-            _annotate_self(core, t)
+            if t is None:
+                # Every container on one host shares one load average, so a
+                # load-derived value would be a fake, correlated signal.
+                print(f"[THERM] {SELF_NODE}: no thermal sensor; not annotating")
+                _clear_self(core)
+            else:
+                print(f"[THERM] {SELF_NODE}: {t:.1f}°C ({source})")
+                _annotate_self(core, t)
         except Exception as e:
             print(f"[THERM] iteration failed: {e}")
         time.sleep(INTERVAL_S)

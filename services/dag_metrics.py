@@ -102,3 +102,57 @@ def compute_upward_ranks(wf: WorkflowInstance, tmpl: WorkflowTemplate,
     wf.upward_rank_max = max_rank
 
     return cache
+
+
+# ---------------------------------------------------------------------------
+# Live (Kubernetes) DAG ranks
+# ---------------------------------------------------------------------------
+
+def live_task_cost(template_id: str, store: ProfileStore,
+                   default_runtime_s: float = 10.0,
+                   default_startup_s: float = 2.0) -> float:
+    """Mean learned startup + runtime across observed nodes (HEFT's w-bar)."""
+    profile = store.get_profile(template_id)
+    if profile and profile.metrics_by_node:
+        costs = [metrics.total_cost for metrics in profile.metrics_by_node.values()
+                 if metrics.count > 0]
+        if costs:
+            return sum(costs) / len(costs)
+    return default_runtime_s + default_startup_s
+
+
+def compute_live_upward_ranks(dag: Dict, store: ProfileStore,
+                              mean_bandwidth_bytes_s: float) -> Dict[str, float]:
+    """Upward ranks for a controller-published workflow DAG.
+
+    ``dag`` is ``{"tasks": {name: template}, "edges": [[parent, child,
+    kind, bytes], ...]}``. Computation costs are learned mean costs per
+    template, communication costs are expected bytes over the mean measured
+    bandwidth, and EXECUTION edges cost nothing, as in Topcuoglu et al.'s HEFT.
+    """
+    tasks: Dict[str, str] = dict(dag.get("tasks", {}))
+    children: Dict[str, list] = {name: [] for name in tasks}
+    for edge in dag.get("edges", []):
+        parent, child = str(edge[0]), str(edge[1])
+        kind = str(edge[2]) if len(edge) > 2 else "DATA"
+        size = float(edge[3]) if len(edge) > 3 else 0.0
+        if parent in children and child in tasks:
+            cost = (size / mean_bandwidth_bytes_s
+                    if kind == "DATA" and mean_bandwidth_bytes_s > 0 else 0.0)
+            children[parent].append((child, cost))
+    ranks: Dict[str, float] = {}
+
+    def rank(name: str, stack: frozenset = frozenset()) -> float:
+        if name in ranks:
+            return ranks[name]
+        if name in stack:
+            raise ValueError(f"workflow DAG contains a cycle through '{name}'")
+        successor = max(
+            (cost + rank(child, stack | {name}) for child, cost in children[name]),
+            default=0.0)
+        ranks[name] = live_task_cost(tasks[name], store) + successor
+        return ranks[name]
+
+    for name in tasks:
+        rank(name)
+    return ranks

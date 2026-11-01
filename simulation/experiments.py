@@ -49,6 +49,7 @@ class ExperimentRecord:
     lateness_s: float
     calibration_status: str = "unspecified"
     uncertainty_sampled: bool = False
+    uncertainty_fraction: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -69,11 +70,18 @@ class WorkloadExperimentRecord:
     energy_j: float
     network_transfer_mib: float
     uncertainty_sampled: bool = False
+    uncertainty_fraction: float = 0.0
 
 
-def sample_cluster_uncertainty(cluster: ClusterSpec, seed: int) -> ClusterSpec:
-    """Sample declared epistemic uncertainty without changing cluster structure."""
-    uncertainty = cluster.calibration.uncertainty_fraction
+def sample_cluster_uncertainty(cluster: ClusterSpec, seed: int,
+                               floor: float = 0.0) -> ClusterSpec:
+    """Sample parameter uncertainty without changing cluster structure.
+
+    Each factor is uniform in [1 - u, 1 + u] where u is the larger of the
+    cluster's declared uncertainty and ``floor``. A positive floor turns every
+    seed into a distinct perturbed instance of a synthetic cluster.
+    """
+    uncertainty = max(cluster.calibration.uncertainty_fraction, floor)
     if uncertainty <= 0:
         return cluster
     digest = sha256(f"{cluster.cluster_id}:{seed}".encode("utf-8")).digest()
@@ -84,14 +92,18 @@ def sample_cluster_uncertainty(cluster: ClusterSpec, seed: int) -> ClusterSpec:
 
     nodes = []
     for node in cluster.nodes:
+        idle_power_w = node.cpu.idle_power_w * factor()
+        # Sample the dynamic range separately so max power stays >= idle.
+        max_power_w = idle_power_w + (
+            node.cpu.max_power_w - node.cpu.idle_power_w) * factor()
         nodes.append(replace(
             node,
             cpu=replace(
                 node.cpu,
                 calibrated_gflops_per_core=(
                     node.cpu.calibrated_gflops_per_core * factor()),
-                idle_power_w=node.cpu.idle_power_w * factor(),
-                max_power_w=node.cpu.max_power_w * factor(),
+                idle_power_w=idle_power_w,
+                max_power_w=max_power_w,
             ),
             memory=replace(
                 node.memory,
@@ -126,10 +138,18 @@ def sample_cluster_uncertainty(cluster: ClusterSpec, seed: int) -> ClusterSpec:
 
 
 def workflow_lower_bound_s(cluster: ClusterSpec, workflow: WorkflowSpec) -> float:
-    """Optimistic bound from critical path and aggregate resource capacities."""
+    """Optimistic bound from critical path and aggregate resource capacities.
+
+    Every term uses the most favourable conditions the engine can produce:
+    unthrottled CPUs, a task's best compatible node, a private L3 cache for the
+    DRAM-traffic estimate, no startup, no transfers, and no contention. The
+    result is therefore a valid lower bound on any simulated makespan.
+    """
     from simulation.estimation import isolated_execution_s
+    from simulation.resources import cache_miss_fraction, node_cpu_capacity_gflops
 
     minimum_execution = {}
+    minimum_dram_mib = {}
     for task in workflow.tasks:
         compatible = [
             node for node in cluster.nodes
@@ -138,7 +158,17 @@ def workflow_lower_bound_s(cluster: ClusterSpec, workflow: WorkflowSpec) -> floa
             and node.memory.capacity_mib - node.background_memory_mib >= task.memory_mib
         ]
         minimum_execution[task.task_id] = min(
-            isolated_execution_s(task, node) for node in compatible
+            isolated_execution_s(
+                task, node,
+                temperature_c=min(node.thermal.initial_c, node.thermal.throttle_c))
+            for node in compatible
+        )
+        memory_mib = task.memory_read_mib + task.memory_write_mib
+        minimum_dram_mib[task.task_id] = min(
+            memory_mib * cache_miss_fraction(
+                task.working_set_mib, task.cache_reuse_fraction,
+                node.cpu.l3_cache_mib)
+            for node in compatible
         )
 
     parents = {task.task_id: [] for task in workflow.tasks}
@@ -156,16 +186,10 @@ def workflow_lower_bound_s(cluster: ClusterSpec, workflow: WorkflowSpec) -> floa
 
     critical_path = max(critical_finish(task.task_id) for task in workflow.tasks)
     total_compute = sum(task.compute_gflop for task in workflow.tasks)
-    total_memory = sum(
-        task.memory_read_mib + task.memory_write_mib for task in workflow.tasks)
+    total_memory = sum(minimum_dram_mib.values())
     total_disk_read = sum(task.disk_read_mib for task in workflow.tasks)
     total_disk_write = sum(task.disk_write_mib for task in workflow.tasks)
-    cpu_capacity = sum(
-        node.cpu.calibrated_gflops_per_core
-        * node.cpu.physical_cores
-        * (1.0 - node.background_cpu_fraction)
-        for node in cluster.nodes
-    )
+    cpu_capacity = sum(node_cpu_capacity_gflops(node) for node in cluster.nodes)
     memory_capacity = sum(
         node.memory.calibrated_bandwidth_mib_s for node in cluster.nodes)
     read_capacity = sum(
@@ -183,7 +207,8 @@ def workflow_lower_bound_s(cluster: ClusterSpec, workflow: WorkflowSpec) -> floa
 
 def _record(cluster: ClusterSpec, workflow: WorkflowSpec, policy: str,
             seed: int, result: SimulationResult,
-            lower_bound_s: float, *, uncertainty_sampled: bool = False) -> ExperimentRecord:
+            lower_bound_s: float, *, uncertainty_sampled: bool = False,
+            uncertainty_fraction: float = 0.0) -> ExperimentRecord:
     deadline_met = (
         result.makespan_s <= workflow.deadline_s
         if workflow.deadline_s is not None else None
@@ -212,6 +237,7 @@ def _record(cluster: ClusterSpec, workflow: WorkflowSpec, policy: str,
                     if workflow.deadline_s is not None else 0.0),
         calibration_status=cluster.calibration.status,
         uncertainty_sampled=uncertainty_sampled,
+        uncertainty_fraction=uncertainty_fraction,
     )
 
 
@@ -266,6 +292,7 @@ def run_experiment_matrix(
     oracle_max_tasks: int = 0,
     oracle_max_assignments: int = 5_000,
     sample_uncertainty: bool = False,
+    uncertainty_floor: float = 0.0,
     progress: Callable[[int, int, ExperimentRecord], None] | None = None,
 ) -> list[ExperimentRecord]:
     clusters = [load_cluster(path) for path in cluster_paths]
@@ -284,18 +311,24 @@ def run_experiment_matrix(
         for workflow in workflows:
             for seed in seeds:
                 run_cluster = (
-                    sample_cluster_uncertainty(cluster, seed)
+                    sample_cluster_uncertainty(cluster, seed, uncertainty_floor)
                     if sample_uncertainty else cluster
+                )
+                applied = (
+                    max(cluster.calibration.uncertainty_fraction, uncertainty_floor)
+                    if sample_uncertainty else 0.0
                 )
                 lower_bound = workflow_lower_bound_s(run_cluster, workflow)
                 for policy_name in policy_names:
+                    # Every policy, including the profile-driven exact Legacy
+                    # variants, plans against the cluster that actually runs.
                     result = Simulator(
                         run_cluster,
                         workflow,
                         create_policy(
                             policy_name,
                             seed=seed,
-                            cluster=cluster,
+                            cluster=run_cluster,
                             workflow=workflow,
                         ),
                         thermal_step_s=thermal_step_s,
@@ -304,6 +337,7 @@ def run_experiment_matrix(
                     record = _record(
                         run_cluster, workflow, policy_name, seed, result, lower_bound,
                         uncertainty_sampled=sample_uncertainty,
+                        uncertainty_fraction=applied,
                     )
                     records.append(record)
                     completed += 1
@@ -323,6 +357,7 @@ def run_experiment_matrix(
                             run_cluster, workflow, "oracle-static", seed,
                             result, lower_bound,
                             uncertainty_sampled=sample_uncertainty,
+                            uncertainty_fraction=applied,
                         )
                         records.append(record)
                         completed += 1
@@ -340,6 +375,7 @@ def run_workload_matrix(
     thermal_step_s: float = 0.5,
     max_virtual_time_s: float = 365 * 24 * 3600,
     sample_uncertainty: bool = False,
+    uncertainty_floor: float = 0.0,
     progress: Callable[[int, int, WorkloadExperimentRecord], None] | None = None,
 ) -> list[WorkloadExperimentRecord]:
     clusters = [load_cluster(path) for path in cluster_paths]
@@ -352,8 +388,12 @@ def run_workload_matrix(
             compiled = workload.compile()
             for seed in seeds:
                 cluster = (
-                    sample_cluster_uncertainty(base_cluster, seed)
+                    sample_cluster_uncertainty(base_cluster, seed, uncertainty_floor)
                     if sample_uncertainty else base_cluster
+                )
+                applied = (
+                    max(base_cluster.calibration.uncertainty_fraction, uncertainty_floor)
+                    if sample_uncertainty else 0.0
                 )
                 for policy_name in policy_names:
                     result = Simulator(
@@ -362,7 +402,7 @@ def run_workload_matrix(
                         create_policy(
                             policy_name,
                             seed=seed,
-                            cluster=base_cluster,
+                            cluster=cluster,
                             workflow=compiled,
                         ),
                         thermal_step_s=thermal_step_s,
@@ -398,6 +438,7 @@ def run_workload_matrix(
                         energy_j=sum(node.energy_j for node in result.nodes.values()),
                         network_transfer_mib=result.network_transfer_mib,
                         uncertainty_sampled=sample_uncertainty,
+                        uncertainty_fraction=applied,
                     )
                     records.append(record)
                     completed += 1
@@ -407,6 +448,11 @@ def run_workload_matrix(
 
 
 def _percentile(values: Sequence[float], fraction: float) -> float:
+    """Nearest-rank percentile (the smallest value with >= fraction below)."""
+    if not values:
+        raise ValueError("cannot take a percentile of an empty sample")
+    if not 0.0 <= fraction <= 1.0:
+        raise ValueError(f"percentile fraction must be in [0, 1], got {fraction}")
     ordered = sorted(values)
     index = max(0, math.ceil(fraction * len(ordered)) - 1)
     return ordered[index]
@@ -414,6 +460,8 @@ def _percentile(values: Sequence[float], fraction: float) -> float:
 
 def _bootstrap_mean_ci(values: Sequence[float], *, seed: int = 2026,
                        samples: int = 2_000) -> tuple[float, float]:
+    if not values:
+        raise ValueError("cannot bootstrap an empty sample")
     if len(values) < 2:
         return values[0], values[0]
     rng = random.Random(seed)
@@ -536,10 +584,13 @@ def analyze_workload_records(records: Sequence[WorkloadExperimentRecord]) -> dic
     ranking = []
     for policy, values in grouped.items():
         regrets = [regret for _, regret in values]
+        ci_low, ci_high = _bootstrap_mean_ci(regrets)
         deadline_rows = [row for row, _ in values if row.deadline_hit_rate is not None]
         ranking.append({
             "policy": policy,
             "cases": len(values),
+            "mean_response_regret": statistics.fmean(regrets),
+            "mean_response_regret_ci95": [ci_low, ci_high],
             "median_response_regret": statistics.median(regrets),
             "p95_response_regret": _percentile(regrets, 0.95),
             "deadline_hit_rate": (
@@ -553,16 +604,39 @@ def analyze_workload_records(records: Sequence[WorkloadExperimentRecord]) -> dic
             "median_energy_j": statistics.median(
                 row.energy_j for row, _ in values),
         })
+    # Response regret is the primary ordering; deadline, makespan, and energy
+    # are reported as separate objective leaders instead of being mixed into a
+    # lexicographic key.
     ranking.sort(key=lambda row: (
-        -(row["deadline_hit_rate"] if row["deadline_hit_rate"] is not None else 1.0),
         row["median_response_regret"],
         row["p95_response_regret"],
+        row["mean_response_regret"],
         row["policy"],
     ))
+
+    def leaders(metric: str, *, maximize: bool = False) -> dict:
+        rows = [row for row in ranking if row[metric] is not None]
+        if not rows:
+            return {"policies": [], "value": None}
+        best = (max if maximize else min)(row[metric] for row in rows)
+        return {
+            "policies": sorted(
+                row["policy"] for row in rows
+                if math.isclose(row[metric], best, rel_tol=1e-12, abs_tol=1e-12)),
+            "value": best,
+        }
+
     return {
         "record_count": len(records),
         "case_count": len(best_response),
         "ranking": ranking,
+        "objective_leaders": {
+            "median_response_regret": leaders("median_response_regret"),
+            "p95_response_regret": leaders("p95_response_regret"),
+            "deadline_hit_rate": leaders("deadline_hit_rate", maximize=True),
+            "median_makespan_s": leaders("median_makespan_s"),
+            "median_energy_j": leaders("median_energy_j"),
+        },
     }
 
 
@@ -622,8 +696,11 @@ def workload_summary_markdown(summary: dict) -> str:
         f"Records: {summary['record_count']}  ",
         f"Comparable cases: {summary['case_count']}",
         "",
-        "| Rank | Policy | Median response regret | P95 response regret | Deadline hit rate | Mean preemptions | Median makespan (s) |",
-        "|---:|---|---:|---:|---:|---:|---:|",
+        "Ranked by median per-case response regret; other objectives are listed",
+        "as separate leaders below.",
+        "",
+        "| Rank | Policy | Median response regret | Mean response regret | P95 response regret | Deadline hit rate | Mean preemptions | Median makespan (s) | Median energy (J) |",
+        "|---:|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for index, row in enumerate(summary["ranking"], start=1):
         deadline = (
@@ -633,14 +710,27 @@ def workload_summary_markdown(summary: dict) -> str:
         lines.append(
             f"| {index} | {row['policy']} | "
             f"{row['median_response_regret']:.2%} | "
+            f"{row['mean_response_regret']:.2%} | "
             f"{row['p95_response_regret']:.2%} | {deadline} | "
-            f"{row['mean_preemptions']:.2f} | {row['median_makespan_s']:.3f} |"
+            f"{row['mean_preemptions']:.2f} | {row['median_makespan_s']:.3f} | "
+            f"{row['median_energy_j']:.1f} |"
         )
+    leaders = summary.get("objective_leaders", {})
+    if leaders:
+        lines.extend(["", "## Objective leaders", "", "| Objective | Policies | Value |",
+                      "|---|---|---:|"])
+        for objective, row in leaders.items():
+            value = row["value"]
+            rendered = "n/a" if value is None else f"{value:.6g}"
+            lines.append(
+                f"| {objective} | {', '.join(row['policies']) or 'n/a'} | {rendered} |")
     return "\n".join(lines) + "\n"
 
 
 def write_experiment_outputs(output_dir: str | Path,
                              records: Sequence[ExperimentRecord]) -> dict[str, Path]:
+    if not records:
+        raise ValueError("no experiment records to write; check seeds and policies")
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     rows = [asdict(record) for record in records]
@@ -671,6 +761,8 @@ def write_workload_outputs(
     output_dir: str | Path,
     records: Sequence[WorkloadExperimentRecord],
 ) -> dict[str, Path]:
+    if not records:
+        raise ValueError("no workload records to write; check seeds and policies")
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     rows = [asdict(record) for record in records]

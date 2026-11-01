@@ -1,105 +1,138 @@
 # TaskScheduler Architecture
 
-TaskScheduler has two execution surfaces: an independent deterministic
-discrete-event simulator under `simulation/`, and a Kubernetes control plane
-under `controlplane/`. They share selected models but not a policy engine or
-identical algorithms. Simulation is the controlled comparative surface; Kind
-is the end-to-end integration and descriptive live surface.
+TaskScheduler has two execution surfaces over one set of scenario
+descriptions: a deterministic discrete-event simulator (`simulation/`) and a
+Kubernetes control plane (`controlplane/`, `services/`, `models/`,
+`engine.py`). The policies exist in both: the simulator implementations work
+on modelled cluster state, the live implementations on Kubernetes
+observations, learned profiles and measured bandwidths. A calibrated
+simulator twin (`simulation/kind_twin.py`) models each emulated Kind cluster so
+that simulated predictions can be compared with live trials.
 
-> **Validation boundary:** live experiments use one physical Windows/Docker
-> host with three Kind worker containers. Balanced, homogeneous, and skewed
-> profiles are logical capacity configurations on that host, not three
-> physical clusters. The two-host k3s procedure below remains a pending
-> deployment target, not completed evidence.
+> **Validation boundary.** Live experiments run on one Windows/Docker host.
+> The `balanced`, `homogeneous` and `edge` profiles emulate heterogeneity with
+> task slots, per-node CPU/memory/I/O speed factors, Docker CPU and memory
+> caps, and `tc netem` delay and rate on each worker's egress. They are not
+> independent machines, links, thermal domains or failure domains. The
+> two-host k3s procedure below has not been used for the retained evidence.
 
 ## Components
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│  User: kubectl apply -f my-pipeline.yaml   (a Workflow CRD)          │
-└────────────────────────────────┬─────────────────────────────────────┘
-                                 │
-                  ┌──────────────▼──────────────┐
-                  │     ts-controller (1x)      │  Deployment
-                  │  Watches Workflow CRDs.     │  controlplane/controller
-                  │  DAG → Pods (schedulerName  │
-                  │  = ts-scheduler). Scrapes   │
-                  │  __TS_OUTPUT__= from logs   │
-                  │  and injects fields as env  │
-                  │  on child Pods.             │
-                  └──────────────┬──────────────┘
-                                 │ (creates Pods)
-                  ┌──────────────▼──────────────┐
-                  │     ts-scheduler (1x)       │  Deployment
-                  │  Watches Pending Pods,      │  controlplane/scheduler
-                  │  invokes Legacy v1/tuned    │
-                  │  or Adaptive policy,        │
-                  │  policy, applies victim     │
-                  │  deletion, binds Pod->node. │
-                  └──────┬───────────────┬──────┘
-                         │               │
-        ┌────────────────┘               └─────────────────┐
-        ▼                                                  ▼
-┌────────────────────┐                          ┌────────────────────┐
-│   ts-fileserver    │  DaemonSet               │ ts-bw-probe (DS)   │
-│   nginx → 8080     │  exposes per-node        │ measures inter-    │
-│   /var/lib/ts-data │  outputs to peers        │ node bandwidth     │
-└────────────────────┘                          │ → Node annotations │
-                                                └────────────────────┘
-┌────────────────────┐
-│   ts-thermal (DS)  │  reads /sys/class/thermal → Node annotation
-│  ts.io/cpu-temp-c  │  consumed by ThermalCollector / AdaptivePolicy
-└────────────────────┘
+ kubectl apply -f workflow.yaml (Workflow CRD, TaskTemplate CRDs)
+                 |
+     +-----------v------------+
+     |  ts-controller (1x)    |  controlplane/controller/main.py
+     |  - ready tasks -> Pods |  - schedulerName: ts-scheduler
+     |  - DAG, priority, gang,|  - hashed DNS-1123 Pod names
+     |    input provenance as |  - retries, failure propagation
+     |    Pod annotations     |  - per-task timestamps, workflow status
+     +-----------+------------+
+                 | Pending Pods
+     +-----------v------------+
+     |  ts-scheduler (1x)     |  controlplane/scheduler/main.py
+     |  - upward ranks from   |  services/policy.py (policies)
+     |    the published DAG   |  engine.py (tick: admission, readiness,
+     |  - policy every tick   |    preemption, placement, binding)
+     |  - bind with rollback  |  services/k8s_cluster.py (inventory merge)
+     |  - victim deletion     |  models/profile_store.py (learned profiles)
+     +-----+------------+-----+
+           |            |
+  +--------v---+  +-----v--------+  +--------------+
+  | ts-        |  | ts-bw-probe  |  | ts-thermal   |   DaemonSets
+  | fileserver |  | bw-from-<peer|  | cpu-temp-c   |
+  | :8080      |  | annotations  |  | (real sensors|
+  | /var/lib/  |  | (staggered   |  |  only unless |
+  | ts-data    |  |  60 s slots) |  |  fallback on)|
+  +------------+  +--------------+  +--------------+
 ```
 
-The container entry modules are `controlplane/controller/main.py` and
-`controlplane/scheduler/main.py`. The controller owns DAG progression,
-retry, output metadata, and terminal status. The scheduler owns ready-Pod
-ordering, placement, binding, profile updates, and preemption actions.
+### Controller
 
-The controller sees the complete Workflow CRD. The current scheduler adapter
-constructs scheduler-side workflow templates with no future edges, so live
-Adaptive does not execute full-DAG HEFT upward ranking.
+Watches Workflows and Pods. A task's Pod is created only when all its parents
+have succeeded. Pod annotations (`ts.scheduler/...`) carry the task template,
+class, compatible node types, logical CPU and memory requests, priority,
+workflow class, preemptability, the compact workflow DAG (tasks, templates,
+typed edges with expected bytes), gang group and gang size, checkpointability,
+and the producer node and byte count of every DATA input. Environment
+variables give the task its identity, input and output directories, its node
+name (downward API) and the emulated speed table (`ts-emulation` ConfigMap,
+optional). Task output (`__TS_OUTPUT__`) is parsed strictly; malformed output
+fails the task instead of wedging it. The workflow status records
+`admittedAt`, per-task `readyAt`, `podCreatedAt`, `startedAt`, `finishedAt`,
+`attempts`, and the final state.
 
-## Install — single-host (kind)
+### Scheduler
+
+Watches Pending Pods that name it. Each tick (default 1 s) the engine admits
+queued workflows (priority, then arrival), resolves readiness, asks the
+policy for placements, holds and preemptions, and binds. A bind returns OK,
+RETRY or DROP; anything but OK rolls the reservation back. A preempted task
+enters `PREEMPTED` and is re-queued only when the controller has created its
+replacement Pod. Cluster inventory is polled outside the scheduling lock and
+merged with the scheduler's logical reservations, so a refresh cannot erase
+decisions the API has not yet reflected. Pods whose completion or
+preemption the scheduler has already processed are remembered for ten
+minutes and never charged as untracked, because a Pod that finished
+between the poll and the merge still looks running in the polled
+inventory (this race once froze nodes for 30 s). One re-entrant lock
+protects all shared state. Completions are logged as `[DONE] ... at=<epoch>`
+and binds as `[BIND] ... at=<epoch>`; the harness parses both, together
+with any scheduler-wide error lines. Runtimes are learned from the task's own metrics (runtime minus
+input staging time), not from kubelet timestamps.
+
+### Policies (live)
+
+`kube-default`, `legacy-v1`, `legacy-tuned`, `eft`, `heft`, `heft-ra`,
+`heft-ra-cap`, `adaptive`, `adaptive-no-preempt`, `calibrate` (`legacy` =
+`legacy-v1`). No
+policy overcommits a node. Gangs are placed all-or-nothing. Live HEFT-RA
+prices each remote input by the producer's measured egress shared with pulls
+planned in the same tick and pulls started recently, and applies a one-level
+lookahead over the task's DAG children; `heft-ra-cap` assigns those
+children only to capacity that is free in the current tick (a child's
+template is looked up in any workflow that used it, otherwise the
+producer's size is assumed).
+
+### Logical and physical task resources
+
+`cpuRequest` and `memoryRequest` in a TaskTemplate are the scheduler's
+logical demand. Optional `physicalResources` sets the Pod's real requests and
+limits. Optional `emulation.workScale` and `timeScale` scale executed work.
+The validation templates (`experiments/k8s/tasktemplates.yaml`) use real
+sizes and no scaling: CPU and memory work is a CPU-time budget
+(`TS_CPU_SECONDS`, `TS_MEMORY_CPU_SECONDS`) divided by the node's emulated
+speed, and I/O work writes real bytes at a paced rate times the node's I/O
+speed.
+
+## Same-host emulation (Kind)
+
+`kind_lab.py create <profile>` builds `ts-cluster` from
+`clusters/kind_profiles.yaml`:
+
+| Step | Effect |
+|---|---|
+| Kind config | One control-plane node and one worker per profile entry, with node-type, capacity and profile labels |
+| `docker update` | `cpus = 0.5 x slots + 0.35`, `memory = 224 x slots + 576` MiB, `cpu-shares = 1024 x slots` per worker container |
+| `tc qdisc replace ... netem delay <d> rate <r>` | Worker egress delay and rate, verified by reading the qdisc back |
+| ConfigMap `ts-emulation` | Per-node CPU, memory, I/O speed factors |
+| Node annotations | `ts.io/netem-delay-ms`, `ts.io/netem-rate-mbit`, `ts.io/emulated-speed`, `ts.io/kind-profile` |
+| `--record <file>` | JSON evidence of everything applied |
+
+`kind_lab.py reset-network` removes the qdiscs; `render-config` prints the
+Kind config.
+
+## Install - single host (Kind)
 
 ```sh
-make images   # builds all 7 images
-make smoke    # creates kind cluster, loads images, installs, runs linear-3task
-```
-
-Or step-by-step:
-
-```sh
-make cluster              # ./setup_cluster.sh small  (kind, 3 workers)
-make images load install  # build, kind-load, kubectl apply -k .
-make examples             # tasktemplates + linear-pipeline-1
+make cluster PROFILE=balanced   # or small / big (demo), homogeneous / edge
+make images load install        # build, kind-load, kubectl apply -k .
+make examples                   # sample TaskTemplates + linear-pipeline-1
 kubectl get workflows -w
 ```
 
-`setup_cluster.sh` accepts `small`, `homogeneous`, `skewed`, and `big`.
-The reproducible low-footprint validation matrix is:
-
-```powershell
-& .\scripts\run-kind-topology-matrix.ps1 `
-  -Profiles small,homogeneous,skewed `
-  -Repetitions 3 `
-  -Seed 2026
-python analyze_kind_topologies.py
-```
-
-The retained matrix passed the strict analyzer: 27 trials, 135 completed
-workflows, and 540 successful final task records, with no final task failures,
-scheduler errors, collection errors, or container restarts. Tuned Legacy has a
-lower makespan than v1 in all three logical profiles and by 3.50% in aggregate.
-Adaptive lowers median workflow response by 19.40% relative to tuned Legacy,
-but raises makespan by 14.80% with 44 real kill/restart preemptions. These are
-same-host integration results, not physical distributed-cluster evidence.
-
-The live scorer names are `legacy-v1`, `legacy-tuned`, and `adaptive`;
-`legacy` is a compatibility alias for v1. Exact Legacy variants share the
-same scorer, profile learning, coverage, and exploration and differ only in
-their eight weights.
+The validation matrix is `scripts/run-kind-validation.ps1` or
+`make kind-validation` (see README).
 
 ## Planned two-host k3s LAN deployment
 
@@ -257,42 +290,42 @@ make k3s-uninstall
 
 ## Producer-local data plane
 
-Producer-local:
-- Each node mounts `/var/lib/ts-data` (hostPath).
-- The controller mounts that into every worker pod at `/data/outputs`,
-  with `TS_OUTPUTS_DIR=/data/outputs/<wf>/<pod>`.
-- The `ts-fileserver` DaemonSet (`hostNetwork`, port 8080) exposes that
+- Each node mounts `/var/lib/ts-data` (hostPath); the controller mounts it into
+  task Pods at `/data/outputs` with `TS_OUTPUTS_DIR=/data/outputs/<wf>/<pod>`.
+- The `ts-fileserver` DaemonSet (`hostNetwork`, port 8080) serves that
   directory to other nodes.
-- The controller injects `TS_PARENT_<NAME>_FILESERVER_URL` env vars so
-  task scripts can `curl` parent outputs when they run on a different
-  node. Same-node parents are simply readable through the shared host
-  mount (no fetch needed).
+- A task stages its parents' outputs at start: a local read when the producer
+  ran on the same node, an HTTP fetch from the producer's fileserver
+  otherwise. It reports the bytes read, the transfer mode and the staging
+  time in its metrics.
+- The validation analyzer requires every consumer to read exactly the bytes
+  its producer wrote, in local mode exactly when the two were co-located.
 
 ## Telemetry
 
-- `ts-bw-probe` curls the 100 MB `_probe.bin` from every peer's
-  fileserver and writes `ts.io/bw-from-<peer>=<MB/s>` onto
-  its own Node. `services/bandwidth.py` reads these to refine ECT.
-- `ts-thermal` reads `/sys/class/thermal/thermal_zone0/temp` (with a
-  load-avg fallback for hosts without sysfs thermals) every 30 s and
-  writes `ts.io/cpu-temp-c` onto its Node.
+- `ts-bw-probe` downloads a 100 MiB `_probe.bin` from every peer's
+  fileserver and writes `ts.io/bw-from-<peer>` (MiB/s) on its own node. Nodes
+  probe in wall-clock slots (`TS_PROBE_STAGGER_S`, 60 s) so probes do not
+  compete with each other. `services/k8s_cluster.py` turns the annotations
+  into the bandwidth matrix used by the estimators.
+- `ts-thermal` reads `/sys/class/thermal/thermal_zone*/temp` every 30 s and
+  writes `ts.io/cpu-temp-c`. Where no sensor exists (Kind on Docker Desktop),
+  the annotation is cleared; a load-average-based synthetic value is only
+  published when `TS_THERMAL_SYNTHETIC_FALLBACK=true`, and is never evidence.
 
-## Simulation and legacy entry points
-
-The definitive simulator and test entry points are:
+## Simulation entry points
 
 ```sh
-python run_experiment_lab.py --help
-python tune_legacy_weights.py --help
+python run_experiment_lab.py run|workload|analyze --help
+python run_mechanism_studies.py --help
 python analyze_final_evidence.py
-python -m pytest
+python tune_legacy_weights.py --help
+python tune_contextual_policy.py --help
+python kind_twin_predict.py results/kind-validation/<profile>.json
+python -m pytest -q
 ```
 
-Simulation has nine policies. Historical simulator `legacy` is an EFT-based
-approximation retained for comparison; only `legacy-v1` and `legacy-tuned`
-run the exact live eight-factor scorer in deterministic virtual time.
-
-`run_simulation.py`, `k8s_scheduler.py`, `k8s_main.py`, and
-`submit_workflows.py` are older development/demo paths retained for
-compatibility. The validated live path is the controller/scheduler split
+`run_simulation.py`, `k8s_scheduler.py`, `k8s_main.py`, `main.py`,
+`server.py` and `submit_workflows.py` are older demo paths kept working for
+compatibility; the validated live path is the controller/scheduler pair
 installed by the root `kustomization.yaml`.

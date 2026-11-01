@@ -4,6 +4,7 @@ from hypothesis import given, settings, strategies as st
 from simulation.engine import Simulator
 from simulation.policies import RandomPolicy
 from simulation.resources import (
+    Hop,
     NetworkFlow,
     advance_temperature,
     allocate_bounded_rates,
@@ -36,13 +37,15 @@ def test_network_allocation_never_exceeds_shared_link_capacity(
             source="a",
             destination="b",
             remaining_mib=100,
-            route=("shared",),
+            route=(Hop("shared", True),),
+            channels=("shared:ab",),
             round_trip_time_s=0,
         )
         for index in range(flow_count)
     ]
 
-    rates = allocate_network_rates(flows, {"shared": link})
+    rates = allocate_network_rates(
+        flows, {"shared:ab": effective_link_capacity_mib_s(link)})
 
     assert sum(rates.values()) <= effective_link_capacity_mib_s(link) + 1e-7
     assert max(rates.values()) - min(rates.values()) <= 1e-7

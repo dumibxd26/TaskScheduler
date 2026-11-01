@@ -1,9 +1,9 @@
 apiVersion: v2
 name: ts-scheduler
 description: |
-  TaskScheduler — adaptive workflow scheduler for heterogeneous Kubernetes
-  clusters. Installs the controller, scheduler, data-plane fileserver, and
-  telemetry DaemonSets (bandwidth + thermal).
+  Skeleton chart for TaskScheduler. It currently renders only the ts-system
+  namespace; the controller, scheduler, CRDs, RBAC, fileserver, and telemetry
+  DaemonSets are installed with `kubectl apply -k .` from the repository root.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

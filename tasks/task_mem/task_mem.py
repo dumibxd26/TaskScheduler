@@ -1,70 +1,91 @@
-"""task_mem — memory-bound stage 2 of the demo pipeline.
+"""task_mem — memory-bound benchmark stage.
 
-Reads parent output metadata via env vars (Channel A — injected by the
-controller from the IO task's ``__TS_OUTPUT__=`` log line). If it needs the
-parent's bulk output file it can fetch it through the parent's node-local
-fileserver using ``$TS_PARENT_<NAME>_FILESERVER_URL``.
+Stages the parent's file (Channel A ``generated_file_path``), then streams a
+``TS_MEMORY_MIB`` buffer through full copies. Two work modes:
+
+* ``TS_MEMORY_CPU_SECONDS`` (validation matrix): copy until the process has
+  used ``TS_MEMORY_CPU_SECONDS * work_scale / speed`` CPU-seconds, where
+  ``speed`` is the node's emulated memory speed;
+* ``TS_MEMORY_PASSES``: a fixed number of passes scaled by
+  ``work_scale / speed``.
+
+An optional ``TS_MEMORY_HOLD_SECONDS`` keeps the footprint resident.
 """
 
-import json
 import os
-import shutil
 import time
-import urllib.request
 
-OUTPUTS_DIR = os.environ.get("TS_OUTPUTS_DIR", "/data/outputs")
-INPUTS_DIR = os.environ.get("TS_INPUTS_DIR", "/data/inputs")
-os.makedirs(OUTPUTS_DIR, exist_ok=True)
-os.makedirs(INPUTS_DIR, exist_ok=True)
-
-# Channel A: small metadata from parent.
-prev_file_path = os.environ.get("generated_file_path", "unknown")
-print(f"Starting Memory task. Received upstream file: {prev_file_path}")
-
-parent_urls = sorted(
-    (key[:-len("_FILESERVER_URL")], value)
-    for key, value in os.environ.items()
-    if key.startswith("TS_PARENT_") and key.endswith("_FILESERVER_URL")
+from tasks.emulation import (
+    TaskReport,
+    emulated_count,
+    run_for_cpu_seconds,
+    stage_parent_inputs,
 )
-transfer_seconds = 0.0
-input_bytes = 0
-if parent_urls and prev_file_path != "unknown":
-    parent_prefix, parent_url = parent_urls[0]
-    parent_dir = os.environ.get(f"{parent_prefix}_OUTPUTS_DIR", "")
-    local_source = os.path.join(
-        "/data/outputs", parent_dir.lstrip("/"), prev_file_path)
-    destination = os.path.join(INPUTS_DIR, prev_file_path)
-    if os.path.isfile(local_source):
-        print(f"[LOCAL] {local_source} -> {destination}")
-        shutil.copyfile(local_source, destination)
+
+
+def main() -> None:
+    report = TaskReport("memory")
+    outputs_dir = os.environ.get("TS_OUTPUTS_DIR", "/data/outputs")
+    inputs_dir = os.environ.get("TS_INPUTS_DIR", "/data/inputs")
+    os.makedirs(outputs_dir, exist_ok=True)
+    print("Starting memory task. Received upstream file: "
+          f"{os.environ.get('generated_file_path', 'unknown')}")
+    staged = stage_parent_inputs(inputs_dir)
+
+    logical_memory_mib = int(os.environ.get("TS_MEMORY_MIB", "64"))
+    logical_hold_s = float(os.environ.get("TS_MEMORY_HOLD_SECONDS", "0"))
+    if logical_memory_mib < 1 or logical_hold_s < 0:
+        raise ValueError(
+            "TS_MEMORY_MIB must be positive and TS_MEMORY_HOLD_SECONDS non-negative")
+    physical_memory_mib = report.config.work_count(logical_memory_mib)
+    physical_hold_s = report.config.duration_s(logical_hold_s)
+
+    mib = 1024 * 1024
+    buffers = {
+        "source": bytearray(b"M" * (physical_memory_mib * mib)),
+        "target": bytearray(physical_memory_mib * mib),
+    }
+
+    def copy_pass() -> None:
+        buffers["target"][:] = buffers["source"]
+        buffers["source"], buffers["target"] = buffers["target"], buffers["source"]
+
+    if os.environ.get("TS_MEMORY_CPU_SECONDS"):
+        logical_cpu_s = float(os.environ["TS_MEMORY_CPU_SECONDS"])
+        if logical_cpu_s <= 0:
+            raise ValueError("TS_MEMORY_CPU_SECONDS must be positive")
+        target_cpu_s = logical_cpu_s * report.config.work_scale / report.speed_factor
+        passes = run_for_cpu_seconds(target_cpu_s, copy_pass)
+        report.emulation.update({
+            "logical_cpu_seconds": logical_cpu_s,
+            "target_cpu_seconds": target_cpu_s,
+        })
     else:
-        url = f"{parent_url}/{prev_file_path}"
-        print(f"[FETCH] {url} -> {destination}")
-        transfer_started = time.time()
-        urllib.request.urlretrieve(url, destination)
-        transfer_seconds = time.time() - transfer_started
-    input_bytes = os.path.getsize(destination)
+        logical_passes = int(os.environ.get("TS_MEMORY_PASSES", "8"))
+        if logical_passes < 1:
+            raise ValueError("TS_MEMORY_PASSES must be positive")
+        passes = emulated_count(logical_passes, report.config, report.speed_factor)
+        for _ in range(passes):
+            copy_pass()
+        report.emulation["logical_passes"] = logical_passes
+    time.sleep(physical_hold_s)
+    print(f"Copied {physical_memory_mib} MiB {passes} times "
+          f"on {report.speed.node or '?'} (speed={report.speed_factor:g})")
+    buffers.clear()
 
-start_time = time.time()
+    report.emulation.update({
+        "logical_memory_mib": logical_memory_mib,
+        "physical_memory_mib": physical_memory_mib,
+        "physical_passes": passes,
+        "logical_hold_seconds": logical_hold_s,
+        "physical_hold_seconds": physical_hold_s,
+    })
+    report.emit(
+        {"processed_array_size": logical_memory_mib},
+        io_bytes_read=staged.input_bytes,
+        transfer_seconds=staged.transfer_seconds,
+    )
 
-# Allocate ~400 MB in RAM (1 MB chunks).
-MB = 1024 * 1024
-chunk_size_mb = 400
-memory_hog = [b"M" * MB for _ in range(chunk_size_mb)]
 
-array_size = len(memory_hog)
-print(f"Held {array_size} MB in RAM.")
-time.sleep(2)
-del memory_hog
-
-print(f"Memory Task finished in {time.time() - start_time:.2f} seconds.")
-
-output = {"processed_array_size": array_size}
-print(f"__TS_OUTPUT__={json.dumps(output)}")
-metrics = {
-    "io_bytes_read": input_bytes,
-    "io_bytes_written": 0,
-    "output_bytes_by_field": {},
-    "transfer_seconds": transfer_seconds,
-}
-print(f"__TS_METRICS__={json.dumps(metrics)}")
+if __name__ == "__main__":
+    main()

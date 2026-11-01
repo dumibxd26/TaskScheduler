@@ -1,3 +1,19 @@
+# TaskTemplates for the same-host Kind validation matrix.
+#
+# Logical demand (cpuRequest/memoryRequest) is what the custom schedulers
+# account: each task occupies one 0.5-CPU slot. The physical envelope lets
+# kubelet admit the Pod and caps it at half a core, so per-slot speed is the
+# same on every worker; node heterogeneity comes only from the emulated speed
+# factors (ts-emulation ConfigMap), slot counts, and tc-netem links.
+#
+# Work is real-size (no workScale/timeScale), so the bytes a producer reports
+# are exactly the bytes its consumers move across the emulated network.
+# CPU and memory work is a CPU-time budget (TS_*_CPU_SECONDS at speed 1.0,
+# divided by the node's emulated speed); under the 500m quota a budget of B
+# CPU-seconds takes about 2B wall seconds on an idle host. Base durations:
+#   experiment-cpu ~3 s, experiment-cpu-long ~10 s, experiment-mem ~4 s,
+#   experiment-io ~3 s writing 24 MiB at 8 MiB/s, and experiment-io-large
+#   ~3 s writing 96 MiB at 32 MiB/s (the data-heavy producer of the DAG batch).
 apiVersion: ts.io/v1
 kind: TaskTemplate
 metadata:
@@ -7,9 +23,38 @@ spec:
   imagePullPolicy: Never
   taskClass: IO_BOUND
   cpuRequest: "0.5"
-  memoryRequest: "384Mi"
-  compatibleNodeTypes: [CPU_OPT, MEM_OPT, IO_OPT]
-  expectedOutputBytes: 104857600
+  memoryRequest: "256Mi"
+  physicalResources:
+    cpuRequest: "250m"
+    memoryRequest: "96Mi"
+    cpuLimit: "500m"
+    memoryLimit: "192Mi"
+  compatibleNodeTypes: [GENERAL, CPU_OPT, MEM_OPT, IO_OPT]
+  env:
+    TS_IO_MIB: "24"
+    TS_IO_RATE_MIB_S: "8"
+  expectedOutputBytes: 25165824
+---
+apiVersion: ts.io/v1
+kind: TaskTemplate
+metadata:
+  name: experiment-io-large
+spec:
+  image: ts-task-io:v1
+  imagePullPolicy: Never
+  taskClass: IO_BOUND
+  cpuRequest: "0.5"
+  memoryRequest: "256Mi"
+  physicalResources:
+    cpuRequest: "250m"
+    memoryRequest: "96Mi"
+    cpuLimit: "500m"
+    memoryLimit: "192Mi"
+  compatibleNodeTypes: [GENERAL, CPU_OPT, MEM_OPT, IO_OPT]
+  env:
+    TS_IO_MIB: "96"
+    TS_IO_RATE_MIB_S: "32"
+  expectedOutputBytes: 100663296
 ---
 apiVersion: ts.io/v1
 kind: TaskTemplate
@@ -20,9 +65,17 @@ spec:
   imagePullPolicy: Never
   taskClass: MEMORY_BOUND
   cpuRequest: "0.5"
-  memoryRequest: "512Mi"
-  compatibleNodeTypes: [CPU_OPT, MEM_OPT, IO_OPT]
-  expectedOutputBytes: 1024
+  memoryRequest: "256Mi"
+  physicalResources:
+    cpuRequest: "250m"
+    memoryRequest: "96Mi"
+    cpuLimit: "500m"
+    memoryLimit: "192Mi"
+  compatibleNodeTypes: [GENERAL, CPU_OPT, MEM_OPT, IO_OPT]
+  env:
+    TS_MEMORY_MIB: "32"
+    TS_MEMORY_CPU_SECONDS: "2"
+  expectedOutputBytes: 0
 ---
 apiVersion: ts.io/v1
 kind: TaskTemplate
@@ -34,10 +87,15 @@ spec:
   taskClass: CPU_BOUND
   cpuRequest: "0.5"
   memoryRequest: "256Mi"
-  compatibleNodeTypes: [CPU_OPT, MEM_OPT, IO_OPT]
-  command: ["sh", "-c"]
-  args: ["export processed_array_size=400; exec python3 task_cpu.py"]
-  expectedOutputBytes: 256
+  physicalResources:
+    cpuRequest: "250m"
+    memoryRequest: "96Mi"
+    cpuLimit: "500m"
+    memoryLimit: "192Mi"
+  compatibleNodeTypes: [GENERAL, CPU_OPT, MEM_OPT, IO_OPT]
+  env:
+    TS_CPU_SECONDS: "1.5"
+  expectedOutputBytes: 0
 ---
 apiVersion: ts.io/v1
 kind: TaskTemplate
@@ -49,7 +107,12 @@ spec:
   taskClass: CPU_BOUND
   cpuRequest: "0.5"
   memoryRequest: "256Mi"
-  compatibleNodeTypes: [CPU_OPT, MEM_OPT, IO_OPT]
-  command: ["sh", "-c"]
-  args: ["export processed_array_size=1000; exec python3 task_cpu.py"]
-  expectedOutputBytes: 256
+  physicalResources:
+    cpuRequest: "250m"
+    memoryRequest: "96Mi"
+    cpuLimit: "500m"
+    memoryLimit: "192Mi"
+  compatibleNodeTypes: [GENERAL, CPU_OPT, MEM_OPT, IO_OPT]
+  env:
+    TS_CPU_SECONDS: "5"
+  expectedOutputBytes: 0

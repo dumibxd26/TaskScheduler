@@ -50,5 +50,5 @@ cluster:
     - {id: cpu-link, endpoints: [cpu-fast, switch], bandwidth_mib_s: 238, latency_ms: 0.2}
     - {id: memory-link, endpoints: [memory-wide, switch], bandwidth_mib_s: 238, latency_ms: 0.2}
     - {id: io-link, endpoints: [io-fast, switch], bandwidth_mib_s: 238, latency_ms: 0.2}
-    - {id: edge-link, endpoints: [arm-edge, switch], bandwidth_mib_s: 60, latency_ms: 3.5, jitter_ms: 1.0, packet_loss_rate: 0.002, medium: wifi}
+    - {id: edge-link, endpoints: [arm-edge, switch], bandwidth_mib_s: 60, latency_ms: 3.5, jitter_ms: 1.0, packet_loss_rate: 0.0005, medium: wifi}
     - {id: registry-link, endpoints: [registry, switch], bandwidth_mib_s: 476, latency_ms: 0.2}

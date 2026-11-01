@@ -19,6 +19,7 @@
 |---|---|
 | Deterministic simulator | Implemented independently under `simulation/` with nine policies and explicit resource/event models |
 | Scenario and trace lab | Implemented under `scenarios/` and `run_experiment_lab.py`; 17,400 exploratory and 33,250 fresh-seed confirmatory records retained |
+| Factorial contextual search | Implemented with a 160-workflow corpus, 64 Adaptive candidates, guarded validation, and 600 untouched holdout runs; all 20 contexts retain HEFT |
 | Producer-local data | Implemented with node-local storage, fileserver DaemonSet, producer metadata, local reads, and remote HTTP fetch |
 | Bandwidth telemetry | Implemented with `ts.io/bw-from-*` Node annotations and live ECT consumption |
 | Thermal telemetry | Implemented as a Node-annotation signal; retained Kind temperatures are synthetic and do not validate physical thermals |
@@ -26,8 +27,10 @@
 | Live preemption | Implemented as bounded Pod deletion plus controller retry, not process migration or checkpoint restore |
 | Controller failure handling | Interrupted tasks retry; descendants blocked by failed parents terminate recursively |
 | Profile persistence | Implemented through local storage plus a ConfigMap |
+| Logical/physical task contract | TaskTemplates can separate scheduler-visible demand from Pod cgroup envelopes and apply positive runtime work/time scales; task metrics report both quantities |
+| Deterministic Kind network emulation | Implemented with versioned per-worker `tc netem` delay/rate profiles, Node annotations, qdisc capture, and behavioral RTT/throughput checks |
 | Full live HEFT ranking | Not implemented: the controller knows the DAG, but the scheduler adapter receives no future edges |
-| Kind evaluation | Historical six-trial pilot plus an accepted 27-trial, 135-workflow, 540-task matrix for Legacy v1, tuned Legacy, and Adaptive across balanced, homogeneous, and skewed same-host profiles |
+| Kind evaluation | Historical six-trial pilot plus a strict three-policy, three-topology protocol across balanced, homogeneous, and skewed same-host profiles; the replacement protocol requires emulation metrics and netem evidence in addition to completion |
 | Physical multi-machine k3s | Scripts exist; retained physical validation is pending |
 
 The original draft follows unchanged so design intent and rejected assumptions

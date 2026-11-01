@@ -2,8 +2,11 @@
 # TaskScheduler — build, deploy, smoke-test.
 #
 # Common targets:
-#   make cluster            # create kind cluster (small profile)
+#   make cluster            # create kind cluster (small demo profile)
 #   make cluster PROFILE=big
+#   make cluster PROFILE=balanced   # emulated validation profile (kind_lab.py);
+#                                   # also homogeneous, edge
+#   make kind-validation    # full same-host validation matrix + twin + report
 #   make images             # build all 7 images
 #   make load               # kind-load all images into ts-cluster
 #   make install            # apply CRDs + RBAC + Deployments + DaemonSets
@@ -36,7 +39,7 @@ ALL_IMAGES := $(CONTROL_PLANE_IMG) $(FILESERVER_IMG) $(BWPROBE_IMG) $(THERMAL_IM
         image-control-plane image-fileserver image-bw-probe image-thermal \
         image-tasks load-images test logs-scheduler logs-controller \
         watch-workflow push install-remote k3s-server k3s-agent k3s-uninstall \
-        images-multiarch verify-cluster verify-cluster-run
+        images-multiarch verify-cluster verify-cluster-run kind-validation
 
 # ── Two-host k3s cluster (cluster.env required) ──
 k3s-server:
@@ -85,11 +88,11 @@ images-multiarch:
 	docker buildx build --platform linux/amd64,linux/arm64 \
 	    -t $(REGISTRY)/ts-thermal:v1 ./images/thermal --push
 	docker buildx build --platform linux/amd64,linux/arm64 \
-	    -t $(REGISTRY)/ts-task-io:v1  ./tasks/task_io  --push
+	    -t $(REGISTRY)/ts-task-io:v1 -f tasks/task_io/Dockerfile . --push
 	docker buildx build --platform linux/amd64,linux/arm64 \
-	    -t $(REGISTRY)/ts-task-mem:v1 ./tasks/task_mem --push
+	    -t $(REGISTRY)/ts-task-mem:v1 -f tasks/task_mem/Dockerfile . --push
 	docker buildx build --platform linux/amd64,linux/arm64 \
-	    -t $(REGISTRY)/ts-task-cpu:v1 ./tasks/task_cpu --push
+	    -t $(REGISTRY)/ts-task-cpu:v1 -f tasks/task_cpu/Dockerfile . --push
 
 # Apply manifests to a remote cluster, rewriting image refs to use the
 # registry prefix. Run from pc1 (kubeconfig already points at the cluster).
@@ -133,9 +136,9 @@ image-thermal:
 	docker build -t $(THERMAL_IMG) ./images/thermal
 
 image-tasks:
-	docker build -t $(TASK_IO_IMG)  ./tasks/task_io
-	docker build -t $(TASK_MEM_IMG) ./tasks/task_mem
-	docker build -t $(TASK_CPU_IMG) ./tasks/task_cpu
+	docker build -t $(TASK_IO_IMG) -f tasks/task_io/Dockerfile .
+	docker build -t $(TASK_MEM_IMG) -f tasks/task_mem/Dockerfile .
+	docker build -t $(TASK_CPU_IMG) -f tasks/task_cpu/Dockerfile .
 
 # ── Load all images into the kind cluster ──
 load:
@@ -185,6 +188,22 @@ watch-workflow:
 		sleep 5; \
 	done; \
 	echo "✗ Timed out after 10 minutes"; exit 1
+
+# ── Same-host validation matrix (emulated heterogeneity + simulator twin) ──
+# Recreates ts-cluster for every profile, runs the warm-up and all trials,
+# predicts them with the calibrated simulator twin, then gates and compares.
+PROFILES ?= balanced homogeneous edge
+REPS     ?= 3
+kind-validation: images
+	@mkdir -p results/kind-validation
+	@for p in $(PROFILES); do \
+		$(PYTHON) kind_lab.py create $$p --record results/kind-validation/$$p-cluster.json && \
+		$(MAKE) load install && \
+		$(PYTHON) run_k8s_experiment.py --profile $$p --repetitions $(REPS) \
+			--seed 2026 --output results/kind-validation/$$p.json && \
+		$(PYTHON) kind_twin_predict.py results/kind-validation/$$p.json || exit 1; \
+	done
+	$(PYTHON) analyze_kind_validation.py --profiles $(PROFILES)
 
 # ── Diagnostics ──
 logs-scheduler:

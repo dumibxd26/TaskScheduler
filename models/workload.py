@@ -100,6 +100,14 @@ class TaskInstance:
     # Computed once on workflow admission by services/dag_metrics.py.
     upward_rank: float = 0.0
 
+    # Live Kubernetes metadata: the DAG task name (several tasks may share a
+    # template) and the number of tasks in this task's gang, when any.
+    task_name: Optional[str] = None
+    gang_size: Optional[int] = None
+    # Direct DAG children as (task name, template id, expected bytes) from the
+    # controller-published workflow DAG; used by lookahead placement.
+    children: List[tuple] = field(default_factory=list)
+
 @dataclass
 class WorkflowInstance:
     """A live, active instance of a WorkflowTemplate."""

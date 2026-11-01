@@ -1,13 +1,19 @@
 # Problem Specification — Adaptive Workflow Scheduler
 
-> **Document status (2026-08-17): historical problem definition.** This file
-> preserves the requirements and success criteria that preceded implementation.
-> It is not a report of completed experiments. Use [README.md](README.md) for
-> current entry points, [ARCHITECTURE.md](ARCHITECTURE.md) for the implemented
-> system, [ENGINEERING_JOURNAL.md](ENGINEERING_JOURNAL.md) for retained
-> evidence, and [thesis/thesis.tex](thesis/thesis.tex) for the final academic
-> evaluation. In particular, same-host Kind evidence does not satisfy this
-> draft's physical-cluster or universal-baseline aspirations.
+> **Document status (updated 2026-10-03): historical problem definition.**
+> This file preserves the requirements and success criteria that preceded
+> implementation. It is not a report of completed experiments. Use
+> [README.md](README.md) for current entry points,
+> [ARCHITECTURE.md](ARCHITECTURE.md) for the implemented system,
+> [ENGINEERING_JOURNAL.md](ENGINEERING_JOURNAL.md) for the step-by-step
+> history and evidence, and [thesis/thesis.tex](thesis/thesis.tex) for the
+> final academic evaluation. Same-host Kind evidence does not satisfy this
+> draft's physical-cluster aspirations.
+>
+> After the 2026-10-03 correction round, the evaluated recommendation is
+> HEFT-RA (a contention-, image-, thermal- and failure-aware HEFT variant with
+> one-level lookahead), with preemptive Adaptive as the specialist for urgent
+> priority bursts; see the journal and thesis for the evidence and its limits.
 >
 > **Status:** Draft v1 · May 2026
 > **Audience:** Thesis defense, future contributors, and the algorithm-design document that follows this one.

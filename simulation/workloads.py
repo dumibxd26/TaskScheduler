@@ -15,6 +15,7 @@ from simulation.schema import (
     ModelValidationError,
     WorkflowSpec,
     load_workflow,
+    parse_bool,
 )
 
 
@@ -60,7 +61,10 @@ class WorkloadSpec:
         tags = {"multi-workflow"}
         for submission in self.submissions:
             workflow = submission.workflow
-            priority = submission.priority or workflow.priority
+            priority = (
+                submission.priority
+                if submission.priority is not None else workflow.priority
+            )
             preemptable = (
                 submission.preemptable
                 if submission.preemptable is not None else workflow.preemptable
@@ -74,7 +78,8 @@ class WorkloadSpec:
                     gang_group_id=(prefix + task.gang_group_id
                                    if task.gang_group_id else None),
                     release_s=submission.arrival_s + task.release_s,
-                    priority=task.priority or priority,
+                    priority=(task.priority
+                              if task.priority is not None else priority),
                     preemptable=(task.preemptable
                                  if task.preemptable is not None else preemptable),
                     workflow_instance_id=submission.submission_id,
@@ -172,8 +177,8 @@ def load_workload(path: str | Path) -> WorkloadSpec:
                 workflow=workflow,
                 arrival_s=float(raw.get("arrival_s", 0.0)) + index * interval_s,
                 priority=_priority(raw.get("priority")),
-                preemptable=(bool(raw["preemptable"])
-                             if "preemptable" in raw else None),
+                preemptable=(parse_bool(raw["preemptable"], "submission.preemptable")
+                             if raw.get("preemptable") is not None else None),
                 deadline_s=(float(raw["deadline_s"])
                             if raw.get("deadline_s") is not None else None),
             ))

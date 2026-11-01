@@ -1,0 +1,11 @@
+.git
+.venv
+.hypothesis
+.pytest_cache
+**/__pycache__
+results
+thesis
+charts
+context
+*.pdf
+*.zip

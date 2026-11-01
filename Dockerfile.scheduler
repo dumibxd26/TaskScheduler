@@ -1,6 +1,11 @@
-FROM python:3.9-slim
+# Legacy single-process scheduler (k8s_scheduler.py, Phase A). The current
+# control plane is built from images/control-plane/Dockerfile and runs
+# `python3 -m controlplane.scheduler.main`; see k8s/scheduler-deployment.yaml.
+FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
+COPY models/ ./models/
+COPY services/ ./services/
+COPY k8s_scheduler.py ./
 CMD ["python", "-u", "k8s_scheduler.py"]

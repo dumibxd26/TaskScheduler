@@ -42,10 +42,41 @@ spec:
                   enum: [CPU_BOUND, MEMORY_BOUND, IO_BOUND]
                 cpuRequest:
                   type: string
-                  description: "Kubernetes CPU request, e.g. '0.5' or '500m'."
+                  description: "Logical CPU demand used by the scheduler, e.g. '0.5' or '500m'. Also used as the physical request and limit when physicalResources is omitted."
                 memoryRequest:
                   type: string
-                  description: "Kubernetes memory request, e.g. '256Mi' or '1Gi'."
+                  description: "Logical memory demand used by the scheduler, e.g. '256Mi' or '1Gi'. Also used as the physical request and limit when physicalResources is omitted."
+                physicalResources:
+                  type: object
+                  description: "Optional cgroup envelope for accelerated emulation. It does not change the logical demand seen by the scheduler."
+                  required: [cpuRequest, memoryRequest]
+                  properties:
+                    cpuRequest:
+                      type: string
+                    memoryRequest:
+                      type: string
+                    cpuLimit:
+                      type: string
+                      description: "Defaults to physicalResources.cpuRequest."
+                    memoryLimit:
+                      type: string
+                      description: "Defaults to physicalResources.memoryRequest."
+                emulation:
+                  type: object
+                  description: "Optional runtime acceleration controls passed to compatible task images."
+                  properties:
+                    workScale:
+                      type: number
+                      minimum: 0
+                      exclusiveMinimum: true
+                      default: 1.0
+                      description: "Multiplier for generated CPU, memory, and I/O work."
+                    timeScale:
+                      type: number
+                      minimum: 0
+                      exclusiveMinimum: true
+                      default: 1.0
+                      description: "Multiplier for deliberate waits and target durations."
                 compatibleNodeTypes:
                   type: array
                   items:
@@ -57,6 +88,11 @@ spec:
                 args:
                   type: array
                   items: { type: string }
+                env:
+                  type: object
+                  description: "Optional environment variables (string values) passed to the task container."
+                  additionalProperties:
+                    type: string
                 expectedOutputBytes:
                   type: integer
                   default: 0

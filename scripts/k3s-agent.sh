@@ -84,9 +84,9 @@ spawn_vm_agent() {
 
     echo "    [${NAME}] installing k3s agent..."
     multipass exec "${NAME}" -- bash -c "command -v k3s >/dev/null 2>&1 || \
-        curl -sfL https://get.k3s.io | K3S_URL=https://${SERVER_IP}:6443 \
-            K3S_TOKEN='${CLUSTER_TOKEN}' \
-            sudo sh -s - agent --node-name=${NAME}"
+        curl -sfL https://get.k3s.io | \
+            sudo env K3S_URL=https://${SERVER_IP}:6443 K3S_TOKEN='${CLUSTER_TOKEN}' \
+            sh -s - agent --node-name=${NAME}"
 
     echo "    [${NAME}] trusting insecure registry ${REGISTRY}..."
     multipass exec "${NAME}" -- sudo bash -c "mkdir -p /etc/rancher/k3s && \
@@ -125,9 +125,10 @@ else
     NODE_TYPE="${2:-CPU_OPT}"
     echo "Native Linux mode — joining single agent ${NODE_NAME} (${NODE_TYPE})."
     if ! command -v k3s >/dev/null 2>&1; then
-        curl -sfL https://get.k3s.io | K3S_URL="https://${SERVER_IP}:6443" \
-            K3S_TOKEN="${CLUSTER_TOKEN}" \
-            sudo sh -s - agent --node-name="${NODE_NAME}"
+        # sudo resets the environment, so pass K3S_* through env(1).
+        curl -sfL https://get.k3s.io | \
+            sudo env K3S_URL="https://${SERVER_IP}:6443" K3S_TOKEN="${CLUSTER_TOKEN}" \
+            sh -s - agent --node-name="${NODE_NAME}"
     fi
     sudo mkdir -p /etc/rancher/k3s
     sudo tee /etc/rancher/k3s/registries.yaml > /dev/null <<EOF

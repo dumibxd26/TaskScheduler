@@ -24,6 +24,10 @@ from kubernetes.client.rest import ApiException
 NAMESPACE = os.environ.get("TS_NAMESPACE", "ts-system")
 SELF_NODE = os.environ.get("TS_NODE_NAME", socket.gethostname())
 INTERVAL_S = float(os.environ.get("TS_PROBE_INTERVAL_S", "600"))
+# Probes from different nodes must not overlap, or concurrent downloads share
+# a source's egress and every pair is under-measured. Each node waits
+# index * STAGGER_S (index in the sorted node list) before its round.
+STAGGER_S = float(os.environ.get("TS_PROBE_STAGGER_S", "0"))
 PROBE_PORT = int(os.environ.get("TS_FILESERVER_PORT", "8080"))
 PROBE_PATH = os.environ.get("TS_PROBE_PATH", "/_probe.bin")
 PROBE_BYTES = int(os.environ.get("TS_PROBE_BYTES", str(100 * 1024 * 1024)))
@@ -95,11 +99,24 @@ def _annotate_self(core: client.CoreV1Api, results: Dict[str, float]):
 
 
 def main():
-    print(f"[BW] ts-bw-probe started on node={SELF_NODE} interval={INTERVAL_S}s")
+    print(f"[BW] ts-bw-probe started on node={SELF_NODE} interval={INTERVAL_S}s "
+          f"stagger={STAGGER_S}s")
     _load_k8s()
     core = client.CoreV1Api()
     while True:
         try:
+            if STAGGER_S > 0:
+                # Wall-clock slots: all Kind nodes share one host clock, so
+                # node i probes only during [i*S, (i+1)*S) of every n*S period.
+                names = sorted(node.metadata.name for node in core.list_node().items)
+                index = names.index(SELF_NODE) if SELF_NODE in names else 0
+                period = len(names) * STAGGER_S
+                now = time.time()
+                start = now - (now % period) + index * STAGGER_S
+                if start < now:
+                    start += period
+                print(f"[BW] waiting {start - now:.0f}s for this node's probe slot")
+                time.sleep(start - now)
             peers = _list_peer_nodes(core)
             results: Dict[str, float] = {}
             for p in peers:

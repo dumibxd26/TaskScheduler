@@ -1,255 +1,56 @@
 # TaskScheduler Status Summary
 
-TaskScheduler now consists of two distinct execution surfaces:
-
-- a deterministic discrete-event experiment lab under `simulation/`, with
-	nine policies and explicit CPU, memory/cache, storage, network, thermal,
-	energy, failure/repair, checkpoint, gang, release, and preemption behavior;
-- a Kubernetes-native Workflow controller and custom scheduler under
-	`controlplane/`, with exact Legacy v1, tuned Legacy, and Adaptive policies,
-	persisted profiles, producer-local data, telemetry, binding, and kill/restart
-	preemption.
-
-The retained exploratory evaluation contains 13,800 closed-DAG and 3,600
-overlapping-workload records. Fresh-seed confirmation adds 26,250 closed-DAG
-and 7,000 overlapping-workload records. A normalized 256-candidate Legacy
-weight search, 750-case-per-variant ablation, controlled factor stresses, and
-an earlier six-trial same-host Kind pilot are also retained. The final local
-stage contains 27 trials, 135 workflows, and 540 successful final task records
-for Legacy v1, tuned Legacy, and Adaptive across three recreated Kind capacity
-profiles. Physical multi-machine k3s validation remains pending.
-The simulator and live policies are related but independent implementations;
-historical simulator Legacy is not the exact live scorer.
-
-Fresh-seed confirmation selects no universal policy. HEFT is the strongest
-closed-DAG default (1.69% mean and 5.75% P95 deployable regret), with EFT a
-close simpler alternative. Under overlapping arrivals, historical Legacy has
-the highest deadline hit rate (60.00%), Adaptive has the lowest P95 response
-regret (35.07%), and EFT/HEFT have the lowest median energy. Tuned exact
-Legacy improves exact v1 pairwise for closed makespan and overlapping response,
-so it is the preferred exact Legacy vector, but it does not overtake the
-objective leaders above. Adaptive without preemption retains the best median
-workload makespan with a modest response-tail penalty and no interruption cost.
-In same-host Kind, tuned Legacy lowers v1 makespan in all three profiles and by
-3.50% in aggregate. Adaptive lowers median workflow response by 19.40% versus
-tuned Legacy but raises makespan by 14.80% with 44 kill/restart preemptions.
-Per-repetition timings are non-monotonic, so profile accumulation does not
-guarantee that Legacy becomes faster on every successive run.
-
-Current setup and results are documented in `README.md`, `ARCHITECTURE.md`,
-`ENGINEERING_JOURNAL.md`, and `thesis/thesis.tex`.
-
-## Historical Legacy learning notes
-
-The remainder of this file describes the original Legacy in-process learning
-path. It is retained as subsystem background, not as a complete description of
-the current project. Live profiles are now persisted rather than memory-only,
-and Adaptive has a separate ECT/UCB/risk score.
-
-## 1. In-Memory Profiling
-
-For each `(task_template_id, node_id)` pair, the system stores a rolling window of the last 20 successful executions.
-
-Each observation records:
-
-- runtime
-- startup time
-- node CPU usage ratio at placement time
-- node memory usage ratio at placement time
-- timestamp
-
-The rolling window size is fixed at 20 observations. When a new observation is added and the window exceeds 20, the oldest entries are discarded.
-
-From these observations, the scheduler computes:
-
-- median runtime
-- median startup time
-- total cost = median runtime + median startup
-
-The median is used instead of the mean because it is more robust to outliers.
-
-The scheduler also aggregates these per-node metrics into per-node-type metrics and maintains:
-
-- `preferred_node_order`: ranked node types for a task
-- `preferred_node_ids`: ranked individual nodes for a task
-- `failures_by_node`: failure counters used for node-specific penalties
-
-## 2. Workflow Ingestion and Task Readiness
-
-### Submission
-
-When a workflow is submitted:
-
-- the workflow enters the `QUEUED` state
-- its tasks start in the `WAITING` state
-- it is inserted into the workflow admission heap based on priority and arrival time
-
-### Admission
-
-On each engine tick, workflows are admitted from the heap into the active set:
-
-- the workflow state becomes `ADMITTED`
-- it becomes visible to the DAG resolver
-
-### DAG Resolution
-
-The `ReadinessResolver` scans tasks in `WAITING` state:
-
-- if all parents are `FINISHED`, the task becomes ready to run
-- if any parent has `FAILED`, the task is marked `FAILED`
-- root tasks with no parents are ready immediately
-
-### Ready Queue
-
-Ready tasks are moved from `WAITING` to `READY` and inserted into the ready-task queue, which is ordered by effective priority.
-
-## 3. Feasibility Filtering
-
-Before choosing a node, the engine filters candidate nodes.
-
-A node is feasible if it has:
-
-- a compatible node type
-- enough free CPU
-- enough free memory
-
-If no feasible nodes exist, the task is held in the `READY` state for a future tick.
-
-## 4. Placement Strategy
-
-When a task is ready and feasible candidate nodes exist, the `WorkflowSchedulerRunner` decides where to place it.
-
-### Phase A: Coverage-First Exploration
-
-Before trusting learned rankings, the scheduler ensures that every feasible compatible node is sampled at least once for the current task template.
-
-- if there are candidate nodes the task has never run on, it chooses randomly among those unseen nodes
-
-This guarantees initial coverage and prevents one lucky early run from dominating future decisions.
-
-### Phase B: Depth Exploration
-
-After every candidate node has been sampled once, the scheduler continues exploring nodes that do not yet have enough data.
-
-- a node is considered under-sampled until it has at least 3 observations for that task
-- if such nodes exist, the scheduler chooses randomly among them
-
-This prevents the system from switching to exploitation after just one observation per node.
-
-### Phase C: Normal Operation
-
-Once all candidate nodes have been sampled sufficiently, the scheduler shifts to normal operation:
-
-- with 10% probability, it performs random exploration
-- otherwise, it performs score-based exploitation
-
-## 5. Scoring Algorithm
-
-During exploitation, the scheduler scores all feasible candidate nodes and selects the highest-scoring one.
-
-The score combines 8 weighted factors:
-
-1. `type_affinity` (+30)
-	Based on historical task performance by node type.
-
-2. `resource_fit` (+20)
-	Rewards CPU and memory headroom, plus extra benefit for tasks that can scale with more cores.
-
-3. `availability` (+25)
-	Rewards nodes that are expected to free resources soon.
-
-4. `warm_image` (+10)
-	Rewards nodes on which this task image has already been executed successfully. This is an execution-level warmness signal, not simply Docker image presence in the cluster cache.
-
-5. `load_balance` (+10)
-	Rewards nodes with fewer currently running tasks.
-
-6. `failure_penalty` (-10)
-	Penalizes nodes that have failed this task before.
-
-7. `data_locality` (+5)
-	Rewards nodes where parent tasks of the current DAG already ran.
-
-8. `memory_pressure` (-15)
-	Penalizes nodes that are close to memory exhaustion.
-
-The node with the highest aggregate score wins the placement.
-
-## 6. Reservation and Execution
-
-Once a node is selected:
-
-- the task is registered on that node
-- the node records the task in its active-task set
-- expected runtime is pulled from historical data if available
-- the engine decrements the node's free CPU and free memory immediately to prevent double-booking in the same tick
-- the task moves to the `RUNNING` state
-
-Execution can then happen in one of three modes:
-
-- simulation mode
-- direct Kubernetes orchestration mode
-- server-based orchestration mode
-
-## 7. Feedback and Learning
-
-After execution, the `ExecutionObserver` updates the in-memory profile store.
-
-### On Success
-
-The observer records:
-
-- actual runtime
-- actual startup time
-- node ID
-- node type
-- node CPU ratio at placement
-- node memory ratio at placement
-
-That observation is added to the rolling 20-observation window for the specific `(task_template_id, node_id)` pair.
-
-Then the scheduler recomputes:
-
-- per-node medians
-- per-node-type medians
-- preferred node-type order
-- preferred node-ID order
-
-The node is also marked warm for that task image, so future runs can receive the warm-image bonus.
-
-### On Failure
-
-The observer records a node-specific failure for that task. This increases the future failure penalty for that node when the same task is scheduled again.
-
-## 8. What the Scheduler Learns
-
-The scheduler learns **task-level placement preferences**.
-
-It does learn:
-
-- which node type is historically best for a specific task
-- which individual node is historically best for a specific task
-- which nodes tend to fail a specific task
-- which nodes are warm for a specific task image
-
-It does not currently learn:
-
-- whole-workflow placement preferences
-- workflow-level embeddings or workflow-wide optimization policies
-- a single preferred node for an entire workflow
-
-In other words, if the same workflow is submitted many times, the scheduler improves because each repeated task template accumulates more placement history.
-
-## 9. High-Level Learning Loop
-
-The current learning loop is:
-
-1. A workflow is submitted.
-2. DAG-ready tasks are moved into the ready queue.
-3. The scheduler first ensures node coverage for each task.
-4. It then gathers a minimum depth of observations per node.
-5. After that, it mostly exploits learned preferences while occasionally exploring.
-6. Each finished task updates the rolling metrics.
-7. Updated metrics change future node rankings.
-
-Over repeated workflow executions, the scheduler becomes better at placing recurring task templates on the nodes that historically minimize startup time, runtime, and failure risk.
+TaskScheduler studies how to place the tasks of DAG workflows on
+heterogeneous clusters. It has two execution surfaces over one set of
+scenario files:
+
+- a deterministic discrete-event simulator (`simulation/`) that models SMT
+  CPUs, caches and DRAM, storage, routed networks with max-min sharing and
+  TCP limits, heating and throttling, energy, failures, checkpoints, gangs,
+  priorities and preemption;
+- a Kubernetes control plane (Workflow and TaskTemplate CRDs, DAG
+  controller, custom scheduler, producer-local data plane, telemetry), run
+  on same-host Kind clusters that emulate heterogeneous nodes, plus a
+  calibrated simulator twin of each emulated cluster.
+
+## What was done in the correction round (2026-10-03/04)
+
+- An audit found 53 problems in the earlier version; all were resolved,
+  almost all with code fixes and regression tests (210 tests pass).
+- HEFT, the standard baseline, was found to be contention-blind (40.4 s vs
+  6.6 s for FCFS on a fan-out). HEFT-RA fixes its estimates and adds a
+  lookahead; `heft-ra-cap` makes the lookahead capacity-aware.
+- Seeds were found to repeat the same experiment (1.4-4.3 distinct outcomes
+  out of 20); later phases perturb every seed by up to +/-10%.
+- The live emulation was rebuilt (slots, speed factors with CPU-time
+  budgets, `tc netem` links); a scheduler refresh race that froze nodes for
+  30 s was found by the live runs, fixed, and the whole live matrix rerun.
+
+## Evidence
+
+| Surface | Scale | Result |
+|---|---|---|
+| Closed DAGs, fresh holdout | 3,750 cases | HEFT-RA 0.37% mean / 0.00% P95 regret; HEFT 12.42% / 49.02%; k8s-default 160.69% |
+| Overlapping workloads, fresh holdout | 1,000 cases | `heft-ra-cap` best median (0.00%) and P95 (63.76%) response regret, deadline hit 71.47% |
+| Cold-start study | 750 runs per variant | Image awareness -1.2% makespan; pre-pulling would give -7.8% |
+| Priority study | 750 runs per policy | Urgent response: HEFT-RA median 7.6 s vs Adaptive 9.7 s, but P95 126.6 s vs 21.0 s; preemption costs others 0.06% |
+| Live Kind matrix | 3 profiles, 9 policies, 162 trials | A HEFT-RA variant fastest on DAGs in 8 of 9 runs (0.917 of HEFT); Adaptive 12% faster critical response; HEFT family 1.48x slower than kube-default for urgent work; refresh fix removed 30+ s stalls |
+| Twin | 6 profile/batch pairs | 3-8% mean error on heterogeneous profiles once the measured slot-release latency is modelled |
+
+## Recommendation
+
+Use HEFT-RA (`heft-ra-cap`) for DAG workflows on heterogeneous clusters,
+especially with data movement or uneven networks; it also serves urgent
+work well in the typical case. Use Adaptive when the worst-case latency of
+urgent workflows arriving into a busy cluster matters (without preemption
+if restarts are costly);
+prefer risk-averse placement where the fastest nodes are the least
+reliable; add image pre-pulling where start-up latency matters; do not use
+the stock Kubernetes scoring to place DAGs.
+
+Simulated regrets are best-case figures: every simulated scheduler knows
+the exact cluster parameters, and HEFT-RA's estimator uses the simulator's
+own models. The live trials, with learned estimates, are the real test,
+and their 9 trials per policy give wide intervals. Physical multi-machine
+validation has not been run. Details:
+`thesis/thesis.pdf`, `ENGINEERING_JOURNAL.md`, `results/`.

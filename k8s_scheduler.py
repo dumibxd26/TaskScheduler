@@ -15,6 +15,7 @@ from models.workload import TaskInstance, TaskTemplate
 from models.profile_store import ProfileStore
 from services.scheduler import PlacementAlgorithm, WorkflowSchedulerRunner
 from services.observer import ExecutionObserver
+from services.quantities import cpu_cores, memory_mib
 
 SCHEDULER_NAME = "ts-scheduler"
 NAMESPACE = "default"
@@ -103,22 +104,9 @@ class K8sScheduler:
         # Read resource requests from the first container
         container = pod.spec.containers[0]
         requests = (container.resources.requests or {}) if container.resources else {}
-        cpu_req_str = requests.get("cpu", "0.5")
-        # K8s may return millicore format like "200m" or plain "0.5"
-        if isinstance(cpu_req_str, str) and cpu_req_str.endswith("m"):
-            cpu_req = float(cpu_req_str[:-1]) / 1000.0
-        else:
-            cpu_req = float(cpu_req_str)
-
-        mem_req_str = requests.get("memory", "128Mi")
-        if mem_req_str.endswith("Mi"):
-            mem_req = float(mem_req_str[:-2])
-        elif mem_req_str.endswith("Gi"):
-            mem_req = float(mem_req_str[:-2]) * 1024
-        elif mem_req_str.endswith("Ki"):
-            mem_req = float(mem_req_str[:-2]) / 1024
-        else:
-            mem_req = 128.0
+        # Full Kubernetes quantity grammar (500m, 1Gi, 512M, 1e9, ...).
+        cpu_req = cpu_cores(requests.get("cpu"), 0.5)
+        mem_req = memory_mib(requests.get("memory"), 128.0)
 
         task_instance = TaskInstance(
             task_instance_id=pod.metadata.name,
@@ -139,8 +127,8 @@ class K8sScheduler:
     # ------------------------------------------------------------------
     # Pod binding
     # ------------------------------------------------------------------
-    def bind_pod(self, pod_name: str, node_name: str):
-        """Sends the Binding object to K8s to physically place the Pod."""
+    def bind_pod(self, pod_name: str, node_name: str) -> bool:
+        """Send the Binding object; return True only if the API accepted it."""
         target = client.V1ObjectReference(api_version="v1", kind="Node", name=node_name)
         meta = client.V1ObjectMeta(name=pod_name)
         binding = client.V1Binding(target=target, metadata=meta)
@@ -156,8 +144,10 @@ class K8sScheduler:
                 _preload_content=False,
             )
             print(f"[BIND] Pod '{pod_name}' -> Node '{node_name}'")
+            return True
         except ApiException as e:
             print(f"[BIND ERROR] Pod '{pod_name}': {e.reason}")
+            return False
 
     # ------------------------------------------------------------------
     # Completion watcher (background thread)
@@ -372,8 +362,13 @@ class K8sScheduler:
                     task_instance, task_template, cluster
                 )
 
-                self.bind_pod(pod.metadata.name, selected_node.node_id)
-                self._bound_pods.add(pod.metadata.name)
+                if self.bind_pod(pod.metadata.name, selected_node.node_id):
+                    self._bound_pods.add(pod.metadata.name)
+                else:
+                    # Release the reservation so a later Pending event can
+                    # retry the binding instead of leaking capacity.
+                    with self._cluster_lock:
+                        selected_node.unregister_task(pod.metadata.name)
 
             except Exception as e:
                 print(f"[ERROR] Failed to schedule '{pod.metadata.name}': {e}")

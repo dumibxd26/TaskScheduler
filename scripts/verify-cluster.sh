@@ -64,14 +64,16 @@ for ds in ts-fileserver ts-bw-probe ts-thermal; do
 done
 
 hdr "5. Bandwidth annotations present"
-BW_NODES=$(kubectl get nodes -o json | jq '[.items[] | select(.metadata.annotations | to_entries[]? | .key | startswith("ts.io/bw-to-"))] | length')
+# ts-bw-probe publishes the rate each node measured downloading FROM a peer
+# as ts.io/bw-from-<peer> (MiB/s) on the downloading node.
+BW_NODES=$(kubectl get nodes -o json | jq '[.items[] | select([.metadata.annotations | to_entries[]? | .key | startswith("ts.io/bw-from-")] | any)] | length')
 if [[ "$BW_NODES" -ge 1 ]]; then
-    pass "${BW_NODES} node(s) have ts.io/bw-to-* annotations"
+    pass "${BW_NODES} node(s) have ts.io/bw-from-* annotations"
     kubectl get nodes -o json | jq -r '
         .items[] | .metadata.name as $n
         | .metadata.annotations | to_entries[]?
-        | select(.key | startswith("ts.io/bw-to-"))
-        | "    \($n) → \(.key | sub("ts.io/bw-to-"; "")):  \(.value) MB/s"'
+        | select(.key | startswith("ts.io/bw-from-"))
+        | "    \(.key | sub("ts.io/bw-from-"; "")) → \($n):  \(.value) MiB/s"'
 else
     info "no bandwidth annotations yet — bw-probe runs every 10 min, wait and re-check"
 fi
@@ -92,7 +94,7 @@ if [[ "$RUN_WF" -eq 1 ]]; then
     kubectl apply -f examples/linear-3task.yaml
     info "watching status (timeout 5 min)..."
     for _ in $(seq 1 60); do
-        PHASE=$(kubectl get workflow linear-pipeline-1 -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+        PHASE=$(kubectl get workflow linear-pipeline-1 -o jsonpath='{.status.state}' 2>/dev/null || echo "")
         printf "    phase=%s\r" "${PHASE:-Pending}"
         [[ "$PHASE" == "FINISHED" ]] && break
         [[ "$PHASE" == "FAILED" ]]   && break

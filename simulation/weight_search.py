@@ -224,21 +224,26 @@ class WeightEvaluator:
         workflow_dir = root / "scenarios" / "workflows"
         base_clusters: dict[str, ClusterSpec] = {}
         workflows: dict[str, WorkflowSpec] = {}
-        profiles: dict[tuple[str, str], ProfileStore] = {}
+        profiles: dict[tuple[str, str, int | None], ProfileStore] = {}
         prepared = []
         for case in cases:
             base_cluster = base_clusters.setdefault(
                 case.cluster, load_cluster(cluster_dir / f"{case.cluster}.yaml"))
             workflow = workflows.setdefault(
                 case.workflow, load_workflow(workflow_dir / f"{case.workflow}.yaml"))
-            profile_key = (case.cluster, case.workflow)
-            if profile_key not in profiles:
-                profiles[profile_key] = build_warm_profile(
-                    base_cluster, workflow, seed=profile_seed)
             cluster = (
                 sample_cluster_uncertainty(base_cluster, case.seed)
                 if sample_uncertainty else base_cluster
             )
+            # Warm profiles describe the hardware that is actually evaluated,
+            # matching the knowledge given to every other simulated policy.
+            profile_key = (
+                case.cluster, case.workflow,
+                case.seed if cluster is not base_cluster else None,
+            )
+            if profile_key not in profiles:
+                profiles[profile_key] = build_warm_profile(
+                    cluster, workflow, seed=profile_seed)
             prepared.append(_PreparedCase(
                 case=case,
                 cluster=cluster,

@@ -1,6 +1,11 @@
+import pytest
+
 from analyze_final_evidence import (
     _bootstrap_mean_ci,
     _closed_summary,
+    _contrasts,
+    _cross_leaders,
+    _distinct_outcomes,
     _metric_leaders,
     _paired,
 )
@@ -75,3 +80,68 @@ def test_metric_leaders_preserve_exact_ties():
 
     assert leaders["cost"] == {"policies": ["a", "b"], "value": 1.0}
     assert leaders["score"] == {"policies": ["b"], "value": 0.7}
+
+def test_distinct_outcomes_detects_seeds_that_change_nothing():
+    rows = [
+        {"policy": "heft", "cluster_id": "fixed", "workflow_id": "w", "seed": seed,
+         "makespan_s": 10.0}
+        for seed in range(3)
+    ] + [
+        {"policy": "heft", "cluster_id": "sampled", "workflow_id": "w", "seed": seed,
+         "makespan_s": 10.0 + seed}
+        for seed in range(3)
+    ]
+
+    result = _distinct_outcomes(rows, ("cluster_id", "workflow_id"), "makespan_s")
+
+    assert result["fixed"]["mean_distinct"] == 1
+    assert result["sampled"]["mean_distinct"] == 3
+
+
+def test_contrasts_skip_policies_missing_from_a_phase():
+    rows = [
+        {"policy": "heft", "cluster_id": "c", "workflow_id": "w", "seed": 0,
+         "makespan_s": 9.0},
+        {"policy": "eft", "cluster_id": "c", "workflow_id": "w", "seed": 0,
+         "makespan_s": 10.0},
+    ]
+
+    result = _contrasts(rows, (("heft", "eft"), ("heft-ra", "heft")), "makespan_s",
+                        ("cluster_id", "workflow_id", "seed"))
+
+    assert [(row["left"], row["right"]) for row in result] == [("heft", "eft")]
+    assert result[0]["mean_ratio"] == 0.9
+
+
+def test_cross_leaders_use_per_case_regret_and_keep_ties():
+    rows = []
+    for seed, (fast, slow) in enumerate(((10.0, 12.0), (8.0, 8.0))):
+        for policy, makespan in (("heft-ra", fast), ("heft", slow),
+                                 ("oracle-static", 1.0)):
+            rows.append({
+                "cluster_id": "c", "workflow_id": "w", "seed": seed,
+                "workflow_family": "fan-out", "cluster_family": "edge",
+                "policy": policy, "makespan_s": makespan,
+            })
+    rows.append({
+        "cluster_id": "d", "workflow_id": "w", "seed": 0,
+        "workflow_family": "fan-out", "cluster_family": "homogeneous",
+        "policy": "heft", "makespan_s": 5.0,
+    })
+    rows.append({
+        "cluster_id": "d", "workflow_id": "w", "seed": 0,
+        "workflow_family": "fan-out", "cluster_family": "homogeneous",
+        "policy": "heft-ra", "makespan_s": 5.0,
+    })
+
+    table = _cross_leaders(
+        rows, ("cluster_id", "workflow_id", "seed"), "makespan_s",
+        "workflow_family", "cluster_family")
+
+    edge = table["fan-out"]["edge"]
+    assert edge["policies"] == ["heft-ra"]
+    assert edge["mean_regret"] == 0.0
+    assert edge["runner_up_mean_regret"] == pytest.approx(0.1)
+    assert edge["cases"] == 2
+    assert table["fan-out"]["homogeneous"]["policies"] == ["heft", "heft-ra"]
+    assert table["fan-out"]["homogeneous"]["runner_up_mean_regret"] is None

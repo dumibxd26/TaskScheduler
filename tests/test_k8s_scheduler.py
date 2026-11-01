@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from threading import Lock
+from threading import RLock
 from types import SimpleNamespace
 
 from controlplane.scheduler.main import TsScheduler
@@ -29,7 +29,10 @@ def test_completion_releases_capacity_and_updates_original_task():
             '{"result": 4096}, "transfer_seconds": 1.25}')
     )
     scheduler.queue = QueueManager()
-    scheduler._cluster_lock = Lock()
+    scheduler._lock = RLock()
+    scheduler._workflow_last_seen = {}
+    scheduler._released_pods = {}
+    scheduler.templates = {}
     scheduler._placement_context = {
         "pod-1": {
             "cpu_usage_ratio": 0.5,
@@ -104,6 +107,7 @@ def test_completion_releases_capacity_and_updates_original_task():
     assert node.active_tasks == {}
     assert node.free_cpu == 4
     assert node.free_memory == 4096
+    assert "pod-1" in scheduler._released_pods
     observation = scheduler.store.get_profile(
         "template-1").metrics_by_node["node-a"].observations[0]
     assert observation.runtime == 3
@@ -123,11 +127,12 @@ def test_preempt_pod_clears_tracking_and_deletes_immediately():
     scheduler = TsScheduler.__new__(TsScheduler)
     scheduler.core = SimpleNamespace(
         delete_namespaced_pod=lambda **kwargs: deleted.append(kwargs))
-    scheduler._state_lock = Lock()
+    scheduler._lock = RLock()
     scheduler._bound_pods = {"pod-1"}
     scheduler._enqueued_pods = {"pod-1"}
     scheduler._pending_pods = {"pod-1": object()}
     scheduler._placement_context = {"pod-1": {"cpu_temperature": 60.0}}
+    scheduler._released_pods = {}
 
     accepted = scheduler.preempt_pod("pod-1")
 
@@ -138,6 +143,8 @@ def test_preempt_pod_clears_tracking_and_deletes_immediately():
     assert "pod-1" not in scheduler._enqueued_pods
     assert "pod-1" not in scheduler._pending_pods
     assert "pod-1" not in scheduler._placement_context
+    # A later refresh must not charge the deleted Pod as untracked.
+    assert "pod-1" in scheduler._released_pods
 
 
 def test_pod_policy_fields_build_matching_workflow_model():
@@ -155,6 +162,8 @@ def test_pod_policy_fields_build_matching_workflow_model():
                 "ts.scheduler/priority": "CRITICAL",
                 "ts.scheduler/workflow_class": "BURST",
                 "ts.scheduler/preemptable": "false",
+                "ts.scheduler/logical_cpu_request": "2",
+                "ts.scheduler/logical_memory_request": "2Gi",
                 "ts.scheduler/data_dependencies": (
                     '[{"parent":"ingest","node":"node-io",'
                     '"bytes":4096}]'),
@@ -168,7 +177,7 @@ def test_pod_policy_fields_build_matching_workflow_model():
         )]),
     )
 
-    task, _, workflow_id, priority, workflow_class, preemptable = (
+    task, template, workflow_id, priority, workflow_class, preemptable = (
         scheduler._pod_to_models(pod))
     workflow = scheduler._ensure_workflow(
         workflow_id, priority, workflow_class, preemptable)
@@ -178,3 +187,5 @@ def test_pod_policy_fields_build_matching_workflow_model():
     assert workflow.preemptable is False
     assert task.parent_node_ids == ["node-io"]
     assert task.input_bytes_by_node == {"node-io": 4096}
+    assert template.cpu_request == 2
+    assert template.memory_request == 2048

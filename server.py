@@ -101,7 +101,8 @@ def _parse_template(data: dict) -> WorkflowTemplate:
 def _make_instance(template: WorkflowTemplate, wf_id: str,
                    priority: PriorityClass = None) -> WorkflowInstance:
     """Instantiate a workflow from a template with fresh task instances."""
-    pri = priority or template.default_priority
+    # BEST_EFFORT is PriorityClass(0), so test for None rather than truthiness.
+    pri = priority if priority is not None else template.default_priority
     task_instances = {}
     for tid in template.tasks:
         task_instances[tid] = TaskInstance(
@@ -486,7 +487,14 @@ def create_app(server: SchedulerServer) -> Flask:
         if not template_id:
             return jsonify({"error": "template_id is required"}), 400
 
-        priority = _PRIORITY.get(priority_str) if priority_str else None
+        priority = None
+        if priority_str is not None:
+            priority = _PRIORITY.get(str(priority_str).upper())
+            if priority is None:
+                return jsonify({
+                    "error": f"unknown priority '{priority_str}'",
+                    "allowed": sorted(_PRIORITY),
+                }), 400
 
         try:
             with server._lock:
@@ -531,7 +539,7 @@ def create_app(server: SchedulerServer) -> Flask:
     def profiles():
         with server._lock:
             result = {}
-            for tid in server.store._profiles:
+            for tid in server.store.profiles:
                 profile = server.store.get_profile(tid)
                 if profile:
                     result[tid] = {

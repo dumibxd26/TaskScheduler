@@ -1,0 +1,170 @@
+{
+  "created_at": "2026-10-03T22:43:38.837788Z",
+  "docker_caps": {
+    "ts-node-core-1": {
+      "container": "ts-cluster-worker",
+      "cpu_shares": 2048,
+      "cpus": 1.35,
+      "memory_mib": 1024
+    },
+    "ts-node-core-2": {
+      "container": "ts-cluster-worker2",
+      "cpu_shares": 2048,
+      "cpus": 1.35,
+      "memory_mib": 1024
+    },
+    "ts-node-edge-1": {
+      "container": "ts-cluster-worker3",
+      "cpu_shares": 1024,
+      "cpus": 0.85,
+      "memory_mib": 800
+    },
+    "ts-node-edge-2": {
+      "container": "ts-cluster-worker4",
+      "cpu_shares": 1024,
+      "cpus": 0.85,
+      "memory_mib": 800
+    }
+  },
+  "evidence_scope": "worker containers on one Docker host; capacities, speeds, and links are emulated, not independent hardware",
+  "kind_config": "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nname: ts-cluster\nnodes:\n- role: control-plane\n- role: worker\n  labels:\n    node-type: CPU_OPT\n    ts.capacity/cpu: '1'\n    ts.capacity/memory: '640'\n    ts.io/cooling-class: STANDARD\n    ts.io/thermal-throttle-c: '100'\n    ts.io/kind-profile: edge\n  kubeadmConfigPatches:\n  - \"kind: JoinConfiguration\\nnodeRegistration:\\n  name: ts-node-core-1\\n\"\n- role: worker\n  labels:\n    node-type: CPU_OPT\n    ts.capacity/cpu: '1'\n    ts.capacity/memory: '640'\n    ts.io/cooling-class: STANDARD\n    ts.io/thermal-throttle-c: '100'\n    ts.io/kind-profile: edge\n  kubeadmConfigPatches:\n  - \"kind: JoinConfiguration\\nnodeRegistration:\\n  name: ts-node-core-2\\n\"\n- role: worker\n  labels:\n    node-type: GENERAL\n    ts.capacity/cpu: '0.5'\n    ts.capacity/memory: '384'\n    ts.io/cooling-class: STANDARD\n    ts.io/thermal-throttle-c: '100'\n    ts.io/kind-profile: edge\n  kubeadmConfigPatches:\n  - \"kind: JoinConfiguration\\nnodeRegistration:\\n  name: ts-node-edge-1\\n\"\n- role: worker\n  labels:\n    node-type: GENERAL\n    ts.capacity/cpu: '0.5'\n    ts.capacity/memory: '384'\n    ts.io/cooling-class: STANDARD\n    ts.io/thermal-throttle-c: '100'\n    ts.io/kind-profile: edge\n  kubeadmConfigPatches:\n  - \"kind: JoinConfiguration\\nnodeRegistration:\\n  name: ts-node-edge-2\\n\"\n",
+  "mirrors": "asymmetric-edge-5",
+  "network": [
+    {
+      "command": [
+        "docker",
+        "exec",
+        "ts-cluster-worker",
+        "tc",
+        "qdisc",
+        "replace",
+        "dev",
+        "eth0",
+        "root",
+        "netem",
+        "delay",
+        "1ms",
+        "rate",
+        "1000mbit"
+      ],
+      "container": "ts-cluster-worker",
+      "delay_ms": 1.0,
+      "interface": "eth0",
+      "node": "ts-node-core-1",
+      "observed": {
+        "delay_ms": 1.0,
+        "rate_mbit": 1000.0
+      },
+      "observed_qdisc": "qdisc netem 8013: root refcnt 9 limit 1000 delay 1ms rate 1Gbit seed 16803677267375655786",
+      "rate_mbit": 1000.0
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "ts-cluster-worker2",
+        "tc",
+        "qdisc",
+        "replace",
+        "dev",
+        "eth0",
+        "root",
+        "netem",
+        "delay",
+        "1ms",
+        "rate",
+        "1000mbit"
+      ],
+      "container": "ts-cluster-worker2",
+      "delay_ms": 1.0,
+      "interface": "eth0",
+      "node": "ts-node-core-2",
+      "observed": {
+        "delay_ms": 1.0,
+        "rate_mbit": 1000.0
+      },
+      "observed_qdisc": "qdisc netem 8014: root refcnt 9 limit 1000 delay 1ms rate 1Gbit seed 6498940465354427609",
+      "rate_mbit": 1000.0
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "ts-cluster-worker3",
+        "tc",
+        "qdisc",
+        "replace",
+        "dev",
+        "eth0",
+        "root",
+        "netem",
+        "delay",
+        "15ms",
+        "rate",
+        "40mbit"
+      ],
+      "container": "ts-cluster-worker3",
+      "delay_ms": 15.0,
+      "interface": "eth0",
+      "node": "ts-node-edge-1",
+      "observed": {
+        "delay_ms": 15.0,
+        "rate_mbit": 40.0
+      },
+      "observed_qdisc": "qdisc netem 8015: root refcnt 9 limit 1000 delay 15ms rate 40Mbit seed 8044468695746144641",
+      "rate_mbit": 40.0
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "ts-cluster-worker4",
+        "tc",
+        "qdisc",
+        "replace",
+        "dev",
+        "eth0",
+        "root",
+        "netem",
+        "delay",
+        "15ms",
+        "rate",
+        "40mbit"
+      ],
+      "container": "ts-cluster-worker4",
+      "delay_ms": 15.0,
+      "interface": "eth0",
+      "node": "ts-node-edge-2",
+      "observed": {
+        "delay_ms": 15.0,
+        "rate_mbit": 40.0
+      },
+      "observed_qdisc": "qdisc netem 8016: root refcnt 9 limit 1000 delay 15ms rate 40Mbit seed 3113043091512410976",
+      "rate_mbit": 40.0
+    }
+  ],
+  "profile": "edge",
+  "schema_version": 1,
+  "speeds": {
+    "ts-node-core-1": {
+      "cpu": 1.0,
+      "io": 1.0,
+      "memory": 1.0
+    },
+    "ts-node-core-2": {
+      "cpu": 1.0,
+      "io": 1.0,
+      "memory": 1.0
+    },
+    "ts-node-edge-1": {
+      "cpu": 0.35,
+      "io": 0.35,
+      "memory": 0.35
+    },
+    "ts-node-edge-2": {
+      "cpu": 0.35,
+      "io": 0.35,
+      "memory": 0.35
+    }
+  }
+}

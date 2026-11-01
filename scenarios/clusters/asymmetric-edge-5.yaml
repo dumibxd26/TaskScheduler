@@ -37,10 +37,10 @@ cluster:
     - <<: *core
       id: core-2
   links:
-    - {id: edge-1-link, endpoints: [edge-1, edge-switch], bandwidth_mib_s: 60, latency_ms: 2.5, jitter_ms: 1.2, packet_loss_rate: 0.003, medium: wifi}
-    - {id: edge-2-link, endpoints: [edge-2, edge-switch], bandwidth_mib_s: 40, latency_ms: 4.0, jitter_ms: 2.0, packet_loss_rate: 0.006, medium: wifi}
-    - {id: edge-3-link, endpoints: [edge-3, edge-switch], bandwidth_mib_s: 25, latency_ms: 8.0, jitter_ms: 4.0, packet_loss_rate: 0.01, medium: wifi}
-    - {id: shared-uplink, endpoints: [edge-switch, core-switch], bandwidth_mib_s: 50, latency_ms: 12, jitter_ms: 3.0, packet_loss_rate: 0.004, medium: wan}
+    - {id: edge-1-link, endpoints: [edge-1, edge-switch], bandwidth_mib_s: 60, latency_ms: 2.5, jitter_ms: 1.2, packet_loss_rate: 0.0005, medium: wifi}
+    - {id: edge-2-link, endpoints: [edge-2, edge-switch], bandwidth_mib_s: 40, latency_ms: 4.0, jitter_ms: 2.0, packet_loss_rate: 0.001, medium: wifi}
+    - {id: edge-3-link, endpoints: [edge-3, edge-switch], bandwidth_mib_s: 25, latency_ms: 8.0, jitter_ms: 4.0, packet_loss_rate: 0.002, medium: wifi}
+    - {id: shared-uplink, endpoints: [edge-switch, core-switch], bandwidth_mib_s: 50, latency_ms: 12, jitter_ms: 3.0, packet_loss_rate: 0.0005, medium: wan}
     - {id: core-1-link, endpoints: [core-1, core-switch], bandwidth_mib_s: 476, latency_ms: 0.15}
     - {id: core-2-link, endpoints: [core-2, core-switch], bandwidth_mib_s: 476, latency_ms: 0.15}
     - {id: registry-link, endpoints: [registry, core-switch], bandwidth_mib_s: 476, latency_ms: 0.15}

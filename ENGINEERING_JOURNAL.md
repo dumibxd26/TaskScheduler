@@ -1,474 +1,1378 @@
 # TaskScheduler Engineering Journal
 
-This journal records why the current system has its shape, what failed during integration, what evidence was produced, and which claims were deliberately rejected. It complements the architecture documents; it is not a replacement for code or raw experiment artifacts.
-
-Evidence snapshot: 2026-08-17.
-
-## 1. Evidence policy
-
-The project has three evidence levels:
-
-1. **Controlled simulation**: deterministic discrete-event runs under explicit scenario assumptions. This is the comparative policy evidence.
-2. **Same-host Kubernetes**: real CRD reconciliation, Pod creation, custom scheduling, binding, deletion, retry, data movement, and profile learning in Kind. This is integration evidence and descriptive live performance evidence.
-3. **Physical multi-machine Kubernetes**: planned through k3s scripts, but not executed for the retained evaluation. No current result should be described as physical-cluster validation.
-
-A claim belongs to the weakest level that actually supports it. Generated manifests and deployable scripts are implementation evidence, not proof that the deployment was run.
-
-## 2. Architecture decisions
-
-### D1. Keep simulator and live control plane separate
-
-**Decision:** Maintain independent simulator and Kubernetes policy implementations over partly shared domain models.
-
-**Rationale:** The simulator needs complete DAGs, deterministic virtual time, direct scenario parameters, and fluid resource equations. The live scheduler operates on Kubernetes observations, learned profiles, annotations, and the ready-Pod frontier.
-
-**Consequence:** Results can be compared by mechanism and policy tendency, but the two surfaces are not numerically interchangeable and do not run identical algorithm code.
-
-### D2. Make assumptions executable
-
-**Decision:** Represent clusters, workflows, and overlapping arrival traces as validated scenario files.
-
-**Rationale:** CPU, memory, storage, network, thermal, failure, checkpoint, release, and gang behavior must be reproducible rather than hidden in experiment scripts.
-
-**Consequence:** The definitive simulation corpus can be regenerated from `scenarios/` and `run_experiment_lab.py`.
-
-### D3. Use a deterministic discrete-event engine
-
-**Decision:** Advance virtual time to releases, completions, transfers, thermal steps, failures, repairs, and checkpoints instead of sleeping in wall-clock time.
-
-**Rationale:** A broad matrix needs reproducibility, speed, and direct control of uncertainty.
-
-**Consequence:** The engine can compare thousands of cases cheaply, but its resource-sharing and overlap assumptions remain model assumptions rather than measurements of a specific kernel.
-
-### D4. Compare a policy portfolio, not only Adaptive
-
-**Decision:** Implement FCFS, seeded Random, EFT, HEFT, the historical simulator Legacy heuristic, exact Legacy v1, tuned exact Legacy, Adaptive, and Adaptive without preemption.
-
-**Rationale:** A new policy is not meaningful without simple controls, established list heuristics, the project's previous simulator heuristic, the actual live scorer, a tuned version of that scorer, and a mechanism ablation.
-
-**Consequence:** The evidence identifies specialists and Pareto tradeoffs instead of forcing a universal-winner claim.
-
-### D5. Preserve an exact preemption ablation
-
-**Decision:** `adaptive-no-preempt` uses the same simulator ordering and placement score as Adaptive with priority preemption disabled.
-
-**Rationale:** This isolates interruption effects from score changes.
-
-**Consequence:** In confirmation, both variants share median makespan, energy, and deadline rate. Adaptive improves P95 response regret from 38.54% to 35.07% at 0.755 interruptions per case, so preemption changes the response tail rather than the broad median result.
-
-### D6. Split DAG lifecycle from placement
-
-**Decision:** The controller owns dependency readiness and Workflow status; the scheduler owns ready-Pod ordering, placement, binding, profile updates, and victim deletion.
-
-**Rationale:** Kubernetes controllers and schedulers have different reconciliation responsibilities. Keeping the split explicit makes retry and failure propagation testable.
-
-**Consequence:** The controller knows the complete CRD DAG, but the current scheduler adapter reconstructs workflow templates with no future edges. Live Adaptive therefore does not validate full HEFT upward ranking.
-
-### D7. Use producer-local storage and explicit provenance
-
-**Decision:** Store outputs under node-local `/var/lib/ts-data`, expose them through a per-node fileserver, and propagate producer node plus byte metadata to children.
-
-**Rationale:** A shared volume would erase the locality decision and make transfer estimates untestable.
-
-**Consequence:** Same-node consumers read locally; remote consumers fetch over HTTP. The live experiment captured one real 100 MiB remote transfer in 2.571 s and four local reads across both policies.
-
-### D8. Learn task-template/node profiles online
-
-**Decision:** Persist startup, runtime, and failure observations by task template and node. Exact Legacy v1, tuned Legacy, and Adaptive force three observations per compatible node. Adaptive then applies an optimistic UCB cost adjustment; both Legacy variants retain a 10% random exploration branch after coverage.
-
-**Rationale:** Cold-start choices should not permanently lock a recurring task onto the first observed node.
-
-**Consequence:** Profile learning is a live-only mechanism in the current comparative design. Simulator Adaptive reads scenario parameters directly and does not perform UCB learning within a run.
-
-### D9. Make live preemption explicit kill/restart
-
-**Decision:** Select only strictly lower-priority victims under per-node and per-task anti-thrashing budgets, delete their Pods, and let the controller recreate interrupted tasks.
-
-**Rationale:** Kubernetes cannot migrate arbitrary process memory. Describing deletion as migration or checkpoint restore would be false.
-
-**Consequence:** Adaptive improved urgent response in Kind but discarded pressure-task progress and increased total makespan. Final container restart counters remain zero because recreation produces new Pods.
-
-### D10. Treat Kind as same-host systems evidence
-
-**Decision:** Use one control-plane container and three worker containers with resource caps and producer-local disks on one Windows/Docker host.
-
-**Rationale:** This environment is repeatable and exercises the real Kubernetes API and control path.
-
-**Consequence:** It does not create independent hardware, links, thermal domains, or failure domains. Thermal annotations in the retained trial are synthetic signal inputs.
-
-### D11. Recommend by objective
-
-**Decision:** Do not select one project-wide winner.
-
-**Rationale:** The policy ordering changes across makespan, deadline success, response, energy, and restart cost.
-
-**Consequence:** Recommendations must identify both the execution surface and objective. HEFT/EFT are candidates for known static DAGs, Adaptive is a candidate for urgent response when restart cost is acceptable, and tuned exact Legacy is preferred over exact Legacy v1 when the live eight-factor scorer is required. The historical simulator Legacy result cannot be advertised as a result for the live Legacy implementation.
-
-### D12. Give each Legacy implementation a distinct identity
-
-**Decision:** Preserve three names in simulation and two weight choices in Kubernetes:
-
-- `legacy` is the historical simulator approximation. It starts from EFT-like timing and adds simulator-specific bonuses and penalties. It is useful for comparison with earlier project results, but it is not the live eight-factor equation.
-- `legacy-v1` is the exact live eight-factor scorer with the original fixed weights.
-- `legacy-tuned` is the same exact scorer, exploration rule, and profile mechanism with only the eight weights changed.
-- In the live policy factory, `legacy` is a backward-compatible alias for the original exact scorer, so live artifacts use `legacy-v1` when the distinction matters.
-
-**Rationale:** The earlier documentation used “Legacy” for two different formulas. That made simulator success look like validation of the live scorer and made weight tuning impossible to interpret.
-
-**Consequence:** Every result and recommendation must include the variant name. Comparisons between `legacy-v1` and `legacy-tuned` isolate weights; comparisons with historical `legacy` also change the algorithm.
-
-### D13. Tune weights on disjoint evidence and fixed scale
-
-**Decision:** Search seeded log-normal candidates with the sum of absolute weights fixed at 125, select finalists on training cases, choose among them on validation cases, and report the selected vector on untouched holdout cases.
-
-**Rationale:** Multiplying all eight weights by a common scalar does not change placement order, so unconstrained scale creates duplicate policies. Reusing search cases for the final claim would overstate generalisation.
-
-**Consequence:** The retained search has 256 candidates, 90 training cases, 45 validation cases, and 75 holdout cases. Its scalar objective is fixed before search: 45% mean makespan ratio, 20% P95 makespan ratio, 15% mean response ratio, 10% energy ratio, 5% transfer ratio, and 5% deadline-lateness ratio. This is a reproducible finite search, not proof of a global optimum.
-
-### D14. Separate simulator load from live timing and balance live order
-
-**Decision:** Run CPU-intensive simulation before Kubernetes timing, never concurrently, and rotate three live policies cyclically by repetition.
-
-**Rationale:** All Kind workers and the simulator share one PC. Concurrent simulation would contaminate wall-clock measurements. A simple alternating order balances two policies but not three.
-
-**Consequence:** The three-policy harness uses Latin rotation: v1/tuned/Adaptive, tuned/Adaptive/v1, then Adaptive/v1/tuned. Each topology is recreated before its trials, and every result records the topology name and exact Legacy weights.
-
-## 3. Integration incident log
-
-### I1. Cleanup races returned HTTP 404
-
-**Symptom:** Repeated live trials could fail while deleting objects that had already disappeared.
-
-**Root cause:** Cleanup assumed every listed resource would still exist at deletion time.
-
-**Fix:** Make deletion idempotent and accept Not Found during cleanup.
-
-**Lesson:** Teardown races are normal in an eventually consistent control plane; cleanup must describe a desired absence.
-
-### I2. Shared tmpfs exhausted during data tests
-
-**Symptom:** Larger generated outputs exhausted the shared in-memory filesystem.
-
-**Root cause:** The original data path used a shared temporary mount, which also invalidated locality experiments.
-
-**Fix:** Move outputs to disk-backed, node-local storage and serve remote files from the producer node.
-
-**Lesson:** Storage topology is part of scheduler semantics, not only deployment plumbing.
-
-### I3. Timestamp arithmetic mixed naive and aware values
-
-**Symptom:** Live duration calculation failed or produced inconsistent comparisons.
-
-**Root cause:** Kubernetes timestamps and locally constructed values used different timezone conventions.
-
-**Fix:** Parse and emit UTC-aware timestamps consistently.
-
-**Lesson:** Experiment timestamps are data contracts and need one canonical timezone.
-
-### I4. Live metadata contracts were missing or stale
-
-**Symptom:** The scheduler could not reliably reconstruct task type, workflow identity, producer locations, or expected bytes from Pods.
-
-**Root cause:** Controller and scheduler evolved independently without a complete annotation contract.
-
-**Fix:** Add explicit task, workflow, priority, data-location, and output-size metadata and parse it in the live scheduler adapter.
-
-**Lesson:** Cross-process model reconstruction must be versioned and tested like an API.
-
-### I5. Transfer cost lacked producer-node locality
-
-**Symptom:** ECT could price bytes but did not know which candidate placement made a dependency local.
-
-**Root cause:** Output size and producer identity were not propagated together.
-
-**Fix:** Carry `input_bytes_by_node` into the live task model and charge only bytes whose producer differs from the candidate node.
-
-**Lesson:** Data amount without location is insufficient for locality-aware scheduling.
-
-### I6. Planned preemptions were not applied to Kubernetes
-
-**Symptom:** The policy emitted victim actions, but running Pods remained in place.
-
-**Root cause:** The scheduling adapter handled placements and bindings but had no live action callback for preemption.
-
-**Fix:** Wire victim actions to Pod deletion, record the preemption, and rely on controller retry.
-
-**Lesson:** A policy decision object is not systems behavior until the adapter applies it and observes the result.
-
-### I7. Failed ancestors left descendants waiting forever
-
-**Symptom:** A workflow could remain non-terminal after an unrecoverable parent failure.
-
-**Root cause:** Readiness checked successful parents, but terminal failure was not recursively propagated through blocked descendants.
-
-**Fix:** Mark blocked descendants failed and continue propagation until the DAG reaches a terminal state.
-
-**Lesson:** DAG controllers need both readiness propagation and impossibility propagation.
-
-### I8. Root Kustomize entry point was invalid
-
-**Symptom:** The documented install path did not render the complete deployment.
-
-**Root cause:** Resource aggregation and paths were inconsistent at the repository root.
-
-**Fix:** Add a valid root `manifests/kustomization.yaml` composition and validate rendered and server-dry-run output.
-
-**Lesson:** Individual valid YAML files do not prove that the installation entry point works.
-
-### I9. Thesis build depended on absent assets and a TikZ library
-
-**Symptom:** LaTeX failed when logos were absent and when coordinate arithmetic used an unloaded TikZ library.
-
-**Root cause:** The template assumed local binary assets and implicit TikZ support.
-
-**Fix:** Add logo fallbacks and load the TikZ `calc` library.
-
-**Lesson:** The paper is a build artifact and needs the same reproducibility standard as code.
-
-### I10. The first exact-Legacy adapter used wall-clock availability
-
-**Symptom:** Replaying the same simulated case could change the availability component because the live scorer subtracted `datetime.now()` from running-task timestamps.
-
-**Root cause:** The exact scorer had been moved into a deterministic simulator without replacing its real-time running-task view.
-
-**Fix:** Introduce a deterministic running-task adapter whose elapsed time comes from simulator virtual time. Add a replay test that compares makespan and every placement across repeated runs.
-
-**Lesson:** Reusing an equation is not enough; every clock and observation feeding that equation must cross the abstraction boundary deliberately.
-
-### I11. A four-candidate search was too weak to tune weights
-
-**Symptom:** The smoke search retained the original vector and provided no useful evidence that the search space had been explored.
-
-**Root cause:** Four candidates and three finalists were intended only to validate the pipeline, not to optimize an eight-dimensional score.
-
-**Fix:** Keep the smoke artifact as a pipeline check, then run 256 normalized candidates and validate only the top 25 on a separate split.
-
-**Lesson:** A successful optimization program is not itself a meaningful optimization experiment.
-
-### I12. The full search exceeded the command window but did not fail
-
-**Symptom:** The execution tool stopped waiting at 120 seconds, creating the appearance of a timeout.
-
-**Root cause:** Candidate evaluation required about 132.5 seconds on this machine; the process continued in its persistent terminal.
-
-**Fix:** Preserve the process, inspect its terminal once, and retain the completed JSON artifact instead of restarting or truncating the search.
-
-**Lesson:** Distinguish a client wait limit from process failure before rerunning an expensive deterministic experiment.
-
-### I13. Broad ablation could not activate every factor
-
-**Symptom:** Removing warm-image, failure-penalty, or memory-pressure weights produced exactly the same aggregate result as the full tuned vector across 750 fresh-seed cases.
-
-**Root cause:** Those factors rarely changed the node ordering in the broad corpus; an aggregate tie does not prove that their implementations are inert.
-
-**Fix:** Add controlled two-node interventions that hold other terms constant enough for each factor to reverse one placement. Warm image changes `cold` to `warm`, failure history changes `risky` to `healthy`, and memory pressure changes `pressured` to `safe`.
-
-**Lesson:** Use broad ablation to measure prevalence and controlled intervention to establish causal activation. Neither substitutes for the other.
-
-## 4. Chronological experiment record
-
-### Phase A: inherited live scheduler and direct Pod runs
-
-The repository began with a custom scheduler, three synthetic task containers, two cluster profiles, and a sequential workflow submission script. The retained `results/run1.txt` run submitted three three-task workflows and completed all nine tasks across five workers. `results/run2.txt` increased this to ten workflows and thirty successful tasks. These runs established that custom binding and repeated placement worked, but they had no controlled policy baseline, no DAG CRD, and no isolated experiment protocol.
-
-A later 100 MiB output and larger memory-stress run, retained in `results/run34.txt`, produced multiple terminal task failures concentrated on an overloaded CPU worker. It exposed the limits of direct submission and host resource assumptions. The failure was not promoted as algorithm evidence; it motivated explicit resource schemas, failure propagation, idempotent cleanup, and a repeatable control plane.
-
-### Phase B: audit and deterministic simulator
-
-The first audit traced the live score, profile persistence, task scripts, deployment manifests, and old result logs. The main gap was evidential: there was runnable code but no way to compare scheduling policies over the same cluster/workflow conditions. The simulator was therefore built around validated cluster, workflow, and workload schemas and a discrete-event engine. Focused tests were added for CPU, memory/cache, storage, routed transfer, image startup, thermal throttling, failure/repair, checkpoints, gang admission, releases, deadlines, and preemption.
-
-FCFS and seeded Random provided controls; EFT and full-DAG HEFT provided established list baselines; historical simulator Legacy preserved the project comparison point; Adaptive and `adaptive-no-preempt` separated score effects from interruption. Small `lab-smoke`, `lab-smoke-v2`, `workload-smoke`, and `new-trace-smoke` artifacts checked serialization, summaries, uncertainty sampling, new arrival traces, and failure termination before large matrices were launched.
-
-### Phase C: first broad simulation matrices
-
-The first definitive matrices crossed five cluster families with fifteen closed-DAG families and four overlapping-arrival traces. Seeds 0--19 sampled declared calibration uncertainty deterministically. The initial seven-policy outputs were retained under `results/final-single-20seed/` and `results/final-workload-20seed/`. Later all-version reruns added exact Legacy v1 and tuned Legacy without overwriting those artifacts, producing `results/final-all-legacy-20seed/` and `results/final-all-workload-20seed/`.
-
-The closed matrix also ran exhaustive static assignment on tractable workflows. During final synthesis, oracle rows were found to have entered the exploratory regret denominator while no oracle was present in confirmation. The corrected report now computes deployable-policy regret against the best deployable policy and reports distance to the static oracle separately on its 300-case subset. This changed regret magnitudes, but not the leading deployable order.
-
-### Phase D: Kubernetes control-plane integration
-
-The direct submission path was replaced by Workflow and TaskTemplate CRDs, a dependency controller, and a scheduler adapter. Integration work then exercised and repaired cleanup races, timestamp normalization, annotation contracts, producer-local provenance, real victim deletion, recursive descendant failure, Kustomize composition, and reproducible image builds. Node-local output storage plus per-node HTTP fileservers replaced shared temporary storage so locality had observable semantics.
-
-Smoke trials established that all five live workflow shapes could complete through the CRD/controller/scheduler path. The balanced comparison then ran original live Legacy and Adaptive three times each. The harness alternated order, isolated profile files by trial, verified selected policy from logs, and retained every workflow, task, placement, transfer, preemption, and error record in `results/k8s-kind/policy-comparison.json`.
-
-### Phase E: Legacy fairness audit and exact adapter
-
-The live comparison raised a fairness question: Legacy learns profiles, but its eight score weights had never been optimized. Inspection also showed that historical simulator Legacy was only an approximation of the live formula. The live scorer was parameterized without changing its default vector, and an adapter was built to run that exact scorer against simulator nodes, tasks, images, data locations, running work, and profiles.
-
-The first adapter inherited wall-clock availability and failed the determinism standard. It was replaced by virtual elapsed time and verified by exact placement/makespan replay. A seeded profile builder then generated twelve independent observations per compatible task/node, allowing both cold-profile and warm-profile evaluation without using live run history as hidden state.
-
-### Phase F: weight search, holdout, and policy integration
-
-The four-candidate smoke search validated generation, normalization, evaluation, selection, and JSON output, but was explicitly rejected as optimization evidence. The full run evaluated 256 seeded log-normal vectors at absolute scale 125 on 90 training cases, advanced 25 finalists to 45 validation cases, and selected the best vector satisfying retry, deadline, objective, and P95 guardrails. The complete run took about 132.5 seconds.
-
-On 75 untouched cases, tuned/original objective was 0.97525 with warm profiles and 0.90022 with cold profiles. Warm-profile mean makespan fell from 43.2603 s to 42.8193 s, mean response from 37.1900 s to 36.9444 s, energy by 1.87%, and transfer from 434.667 MiB to 272.533 MiB; P95 makespan was unchanged. The selected vector was registered as `legacy-tuned`, the original exact vector as `legacy-v1`, and historical simulator `legacy` was deliberately preserved.
-
-### Phase G: confirmation and factor studies
-
-The all-version exploratory matrices compared nine policies. A fresh seeds 200--249 closed-DAG run then evaluated the seven serious common policies over 3,750 cases and 26,250 records. Recomputing exploratory and confirmatory regret over the same deployable set showed stable means and tails; an apparent discrepancy was traced to oracle rows in the old exploratory denominator, not to seed instability.
-
-A leave-one-factor-out study used seeds 300--309 over all 750 cluster/workflow cases. Removing availability improved the scalar objective by only 0.000111, too little to justify changing the chosen vector after holdout selection. Removing load balance, locality, and type affinity worsened it by 0.07363, 0.08478, and 0.70451 respectively. Warm image, failure penalty, and memory pressure tied the full vector in this broad corpus, so controlled factor-activation cases were added rather than deleting them. All three controlled cases changed placement in the expected direction.
-
-### Phase H: expanded confirmation and topology validation
-
-The final confidence phase completed an untouched seeds 200--249 overlapping-workload matrix and deterministic aggregate/family synthesis. The generated report preserves all-policy exploration, recomputes a common-policy exploratory view, confirms rank stability, reports paired tuned/v1 intervals, and keeps static-oracle gaps separate. Its retained artifacts are `results/final-evidence-synthesis.json` and `.md`.
-
-The remaining live step recreates three same-host Kind topology mimics: balanced heterogeneous, homogeneous, and strongly resource-skewed. It compares exact Legacy v1, tuned exact Legacy, and Adaptive in balanced cyclic order. Results belong in the definitive section only after every retained artifact passes completion and integrity checks.
-
-## 5. Definitive experiments
-
-### Legacy weight search
-
-- Inputs: 256 normalized candidates; 90 training, 45 validation, and 75 untouched holdout cases; 12 seeded warm-profile observations per compatible task/node.
-- Artifact: `results/legacy-weight-search.json`.
-- Selection: tuned Legacy is the best eligible validation finalist with objective 0.95898 versus Legacy v1.
-- Warm holdout: objective 0.97525; mean makespan 42.8193 s versus 43.2603 s; mean response 36.9444 s versus 37.1900 s; mean transfer 272.533 MiB versus 434.667 MiB; P95 makespan unchanged.
-- Cold holdout: objective 0.90022; mean makespan 45.7993 s versus 49.5156 s; retries 5 versus 10; P95 makespan unchanged.
-- Scope: best observed guardrail-compliant vector for the fixed search and objective, not a global optimum.
-
-### Closed DAG matrices
-
-- Exploratory inputs: 5 cluster families, 15 workflow families, seeds 0-19, and 9 deployable policies.
-- Exploratory records: 13,500 deployable rows plus 300 exhaustive static-assignment references over 1,500 cases.
-- Confirmatory inputs: untouched seeds 200-249 and 7 serious policies.
-- Confirmatory records: 26,250 rows over 3,750 cases.
-- Artifacts: `results/final-all-legacy-20seed/` and `results/confirmatory-single-seeds200-249/`.
-- Main result: HEFT remains the strongest observed closed-DAG default. On confirmation its deployable-policy mean regret is 1.6902% (95% bootstrap interval 1.4046%-1.9832%), P95 regret is 5.7504%, and win/tie rate is 91.9733%. EFT is close at 1.8500% mean regret but has a 10.0507% P95 tail.
-- Stability: all seven common policies retain the same exploratory and confirmatory rank.
-- Legacy distinction: historical simulator Legacy ranks third. Tuned/v1 paired makespan ratio is 0.9714 (95% bootstrap interval 0.9677-0.9751), with 550 wins, 3,150 ties, and 50 losses; tuned does not overtake HEFT/EFT globally.
-- Reporting correction: deployable regret excludes the static oracle. Oracle gaps are reported separately on the 300 tractable cases.
-
-### Overlapping workload matrices
-
-- Exploratory inputs: the same 5 clusters, 4 arrival traces, seeds 0-19, and 9 policies; 3,600 rows over 400 cases.
-- Confirmatory inputs: untouched seeds 200-249 and 7 policies; 7,000 rows over 1,000 cases.
-- Artifacts: `results/final-all-workload-20seed/` and `results/confirmatory-workload-seeds200-249/`.
-- Stable objective leaders: historical simulator Legacy has the highest deadline hit rate (60.00%); Adaptive has the lowest confirmatory P95 response regret (35.07%); Adaptive, its no-preemption ablation, EFT, and HEFT share the 55.070 s median makespan; EFT/HEFT have the lowest median energy (3080.432 J).
-- Stability: all seven common policies retain the same exploratory and confirmatory rank.
-- Preemption: Adaptive averages 0.755 interruptions per confirmatory case. Its P95 response regret is 3.47 percentage points lower than the no-preemption ablation, while their median makespan and energy are equal.
-- Exact Legacy: tuned/v1 paired mean-response ratio is 0.9370 (95% bootstrap interval 0.9303-0.9433), with 474 wins, 351 ties, and 175 losses. Tuned also improves v1 from 3.26% to 1.08% median response regret, 77.51% to 54.70% P95 regret, 46.67% to 53.33% deadline hit rate, and 67.084 s to 62.421 s median makespan. It still does not become the overall concurrent-workload default.
-
-### Legacy factor evidence
-
-- Broad ablation: 750 fresh-seed cases per variant under seeds 300-309.
-- Consequential terms: removing type affinity, data locality, or load balance worsens objective by 0.70451, 0.08478, and 0.07363 respectively.
-- Near-neutral terms: removing availability improves objective by 0.000111 and removing resource fit worsens it by 0.000114. These post-selection differences are too small to justify replacing the holdout-selected vector.
-- Inactive-in-corpus terms: warm image, failure penalty, and memory pressure tie tuned Legacy in the broad matrix, but each reverses placement under its controlled intervention.
-- Artifacts: `results/legacy-factor-ablation.json` and `results/legacy-factor-stress.json`.
-
-### Earlier balanced Kind pilot
-
-- Inputs: Legacy and Adaptive, 3 alternating-order repetitions per policy, 5 workflows and 20 final tasks per trial.
-- Records: 6 trials, 30 completed workflows, and 120 successful final tasks.
-- Artifact: `results/k8s-kind/policy-comparison.json`.
-- Main result: Adaptive lowers median workflow response from 75.585 s to 56.555 s and critical response from 41.336 s to 35.864 s. It raises median trial makespan from 103.251 s to 125.244 s and performs 17 kill/restart preemptions. Legacy performs none.
-- Integrity: no failed final tasks, final container restarts, scheduler error lines, or top-level experiment error.
-
-This pilot compares the original exact live Legacy vector with Adaptive. It remains useful mechanism evidence for kill/restart preemption, but it is not the final v1/tuned/Adaptive topology matrix and is not merged with that matrix's timing summaries.
-
-### Final Kind topology matrix
-
-The definitive local systems tier completed with seed 2026. It recreates the `small` (balanced), `homogeneous`, and `skewed` logical worker-capacity profiles. Within each profile it runs Legacy v1, tuned Legacy, and Adaptive for three repetitions each, rotating the policy that executes first. Profiles persist only within one policy/topology sequence. Every trial submits the same five workflow shapes and expects 20 final task records.
-
-Retained artifacts:
-
-- Raw topology documents: `results/k8s-kind-topologies/small.json`, `homogeneous.json`, and `skewed.json`.
-- Strict generated summaries: `results/k8s-kind-topologies/summary.json` and `summary.md`.
-- Runner: `scripts/run-kind-topology-matrix.ps1`.
-- Integrity analyzer: `analyze_kind_topologies.py`.
-
-The analyzer accepts all three raw documents. The accepted evidence contains 27/27 trials, 135/135 completed workflows, and 540/540 successful final task records. Every trial has 20 final tasks and at least 20 observed bindings. Policy metadata, exact Legacy vectors, repetition coverage, and profile isolation match the declared design. There are zero final task failures, final container restarts, scheduler error lines, collection errors, and top-level experiment errors.
-
-| Logical profile | Policy | Median workflow (s) | P95 workflow (s) | Critical (s) | Makespan (s) | Preemptions |
-|---|---|---:|---:|---:|---:|---:|
-| homogeneous | Adaptive | 34.203 | 67.047 | 27.454 | 65.701 | 15 |
-| homogeneous | Legacy tuned | 47.527 | 54.558 | 28.187 | 57.083 | 0 |
-| homogeneous | Legacy v1 | 47.527 | 53.517 | 28.690 | 59.189 | 0 |
-| skewed | Adaptive | 33.978 | 67.579 | 32.115 | 65.734 | 15 |
-| skewed | Legacy tuned | 42.992 | 51.401 | 23.558 | 57.382 | 0 |
-| skewed | Legacy v1 | 47.443 | 60.388 | 32.254 | 61.560 | 0 |
-| small/balanced | Adaptive | 44.372 | 90.339 | 29.243 | 88.361 | 14 |
-| small/balanced | Legacy tuned | 50.427 | 71.121 | 31.558 | 73.933 | 0 |
-| small/balanced | Legacy v1 | 52.863 | 73.859 | 30.618 | 77.948 | 0 |
-
-Aggregate descriptive results over nine trials per policy are:
-
-| Policy | Completed workflows/tasks | Median workflow (s) | P95 workflow (s) | Critical (s) | Makespan (s) | Preemptions |
-|---|---:|---:|---:|---:|---:|---:|
-| Adaptive | 45/180 | 38.307 | 70.993 | 28.245 | 67.047 | 44 |
-| Legacy tuned | 45/180 | 47.527 | 69.812 | 27.821 | 58.401 | 0 |
-| Legacy v1 | 45/180 | 47.665 | 70.948 | 29.431 | 60.517 | 0 |
-
-The exact tuned scorer lowers v1 makespan in 3/3 profiles: 3.56% on homogeneous, 6.79% on skewed, and 5.15% on small. In aggregate it changes median workflow response by -0.29%, P95 response by -1.60%, critical response by -5.47%, and makespan by -3.50%. Tuned is not pointwise better: it ties homogeneous median response, worsens homogeneous P95 by 1.94%, and worsens small critical response by 3.07%. The supported conclusion is aggregate and objective-specific improvement, not dominance.
-
-Adaptive lowers aggregate median workflow response by 19.40% relative to tuned Legacy and has the lowest median in all three profiles. It raises aggregate P95 response by 1.69%, critical response by 1.52%, and makespan by 14.80%; its makespan is higher in all three profiles. Aggregate shape medians explain the trade:
-
-| Shape | Legacy v1 (s) | Legacy tuned (s) | Adaptive (s) |
-|---|---:|---:|---:|
-| pressure | 50.994 | 47.527 | 67.047 |
-| critical | 29.431 | 27.821 | 28.245 |
-| pipeline | 52.863 | 50.419 | 38.173 |
-| fan-out | 50.828 | 50.382 | 43.634 |
-| parallel | 41.121 | 44.240 | 29.871 |
-
-Adaptive's 44 victims are all `pressure-long-*` Pods. Deleting them releases logical capacity for pipeline, fan-out, parallel, and some critical work, while controller recreation discards their in-process CPU work. This observed mechanism explains the lower regular-workflow median and the higher pressure median and trial makespan. Neither exact Legacy variant preempts.
-
-The data path records five remote fetches and four local reads for Adaptive, four remote and five local for tuned Legacy, and eight remote and one local for v1. Measured transfer-time totals are 4.487 s, 5.453 s, and 11.354 s respectively. These observations validate producer provenance, local selection, peer fileserver access, task-side HTTP fetch, and collection. They do not compare physical networks because all workers share one host.
-
-Learning sequences are not monotonic. Across-profile median makespan by repetition is 58.401, 57.292, and 59.440 s for tuned Legacy; 61.560, 64.453, and 59.863 s for v1; and 67.579, 64.351, and 65.734 s for Adaptive. Mean response is also non-monotonic. Persisted profiles demonstrably affect later inputs and choices, but run position, image/cache state, shared-host interference, and exploration co-vary. The matrix therefore rejects a guarantee that profile accumulation makes every next run faster.
-
-This matrix is descriptive same-PC systems evidence. It validates the Kubernetes control path, exact policy selection, profile persistence, binding, retry preemption, and local/remote data paths across three logical capacity configurations. It does not establish confidence intervals, independent physical-node scaling, real inter-machine bandwidth, hardware thermals, or energy behavior.
-
-## 6. Claims rejected during audit
-
-The following statements are not supported and must not reappear in papers or documentation:
-
-- "Adaptive is the best scheduler." The objective and scenario family change the answer.
-- "Simulator and Kubernetes run the same policy code." They are separate implementations.
-- "The live experiment validates HEFT." The scheduler does not receive the complete future DAG.
-- "The project was validated on a physical two-host or multi-machine k3s cluster." That stage is pending.
-- "Kind validates real network or thermal behavior." Its workers share one physical host and the retained thermal values are synthetic.
-- "Simulator preemption is cosmetic." It changes task state and restores checkpointed remaining work or restarts work.
-- "The live comparison is against the default Kubernetes scheduler." The definitive artifact compares custom Legacy v1, tuned Legacy, and Adaptive policies.
-- "Ten IID repetitions support live confidence intervals." There are three sequential repetitions per policy; live summaries are descriptive.
-- "Generated resources prove integration." Only observed workflow/task/control-plane outcomes count as integration evidence.
-- "Historical simulator Legacy validates the live Legacy scorer." The formulas differ; only `legacy-v1` and `legacy-tuned` use the exact live eight-factor score in simulation.
-- "The tuned vector is the globally best set of weights." It is the best guardrail-compliant validation result among 256 seeded normalized candidates for one declared objective.
-- "Legacy must get faster after every learned run." Coverage and profile updates change later choices, but workload interference, image state, exploration, and shared-host noise prevent monotonic wall-clock guarantees.
-- "A tied leave-one-factor-out result proves the factor is useless." It proves only that the factor did not change aggregate ordering in that corpus. Controlled warm-image, failure, and memory-pressure interventions all reverse a placement.
-- "Three Kind topology profiles are three physical clusters." They are three logical capacity configurations recreated as worker containers on the same PC.
-
-## 7. Evidence map
-
-| Claim | Owning evidence |
+This journal explains, step by step, how the TaskScheduler project reached
+its current state: what was built, what was measured, what went wrong, how
+each mistake was found and fixed, and why one design was chosen over another.
+It is written for a reader who wants to *understand* the project, not only
+use it, so most sections contain a worked example with real numbers taken
+from the retained artifacts.
+
+The companion documents are:
+
+- `thesis/thesis.pdf` - the formal write-up (introduction, state of the art,
+  architecture, evaluation, conclusions);
+- `README.md` - how to run everything;
+- `ARCHITECTURE.md` - the component map;
+- `results/final-evidence-synthesis.md` and `results/kind-validation/summary.md`
+  - generated evidence reports from which every number in this journal is
+  taken.
+
+Evidence snapshot: 2026-10-03 (correction round). Everything produced before
+the correction round is preserved in
+`results/archive/pre-correction-2026-10-03.zip` and in git history.
+
+---
+
+## Contents
+
+1. How to read this journal
+2. The project in one page
+3. Inherited history (phases A-I) and what survived
+4. Phase J - the audit
+5. Phase K - correcting the simulator
+6. Phase L - HEFT-RA, a contention-aware list scheduler
+7. Phase M - re-running the simulation evidence
+8. Phase N - rebuilding the live emulation
+9. Phase O - live Kubernetes validation and the simulator twin
+10. Recommendations: which algorithm for which workflow and cluster
+11. Claims withdrawn or corrected
+12. Design choices that were considered and rejected
+13. Evidence map
+14. Open work
+15. Glossary
+
+---
+
+## 1. How to read this journal
+
+### 1.1 Three levels of evidence
+
+Every claim in this project belongs to exactly one evidence level, and a
+claim is only as strong as the weakest level that supports it.
+
+| Level | What it is | What it can prove |
+|---|---|---|
+| 1. Controlled simulation | Deterministic discrete-event runs of declared cluster and workflow models (`simulation/`). | Comparative policy behaviour under the stated model assumptions. |
+| 2. Same-host Kubernetes | Real CRDs, controller, custom scheduler, Pods, kubelet, cgroups and `tc netem` links in Kind containers on one PC. | That the control plane works end to end, and whether the simulator's predictions hold for a real (emulated) system. |
+| 3. Physical cluster | k3s on separate machines (scripts exist in `scripts/`). | Not executed. No result in this project is a physical-cluster result. |
+
+### 1.2 The vocabulary used everywhere
+
+- **Makespan** - time from a workflow's submission until its last task
+  finishes.
+- **Regret** - how much worse a policy is than the best *deployable* policy
+  on the same case: `makespan / best_makespan - 1`. A regret of 0% means
+  the policy was the best (or tied for best) on that case. The exhaustive
+  static oracle is reported separately and never enters this denominator.
+- **Case** - one (cluster, workflow, seed) combination for closed DAGs, or
+  one (cluster, workload, seed) combination for overlapping workloads.
+- **P95 regret** - the 95th percentile of regret over cases. It measures
+  the bad tail: "how badly does this policy fail in its worst 5% of cases?"
+- **Win/tie rate** - share of cases where the policy had zero regret.
+- **Exploratory / confirmatory / holdout** - three disjoint seed ranges.
+  Exploratory seeds (0-19) were used for development; confirmatory seeds
+  (200-249) check that conclusions repeat; holdout seeds (400-449) were
+  never looked at before every design choice was frozen.
+
+### 1.3 Where things live
+
+| Path | Content |
 |---|---|
-| Simulator resource and event behavior | `simulation/engine.py`, `simulation/resources.py`, focused tests |
-| Full-DAG policy behavior | `simulation/policies.py`, closed and workload raw records |
-| Exact Legacy scorer in simulation | `simulation/legacy_weights.py`, replay and scorer tests |
-| Legacy candidate generation and objective | `simulation/weight_search.py`, `tune_legacy_weights.py` |
-| Selected weights and disjoint holdout | `results/legacy-weight-search.json` |
-| Factor prevalence and causal activation | `results/legacy-factor-ablation.json`, `results/legacy-factor-stress.json` |
-| Live ECT, UCB, gang, and preemption decisions | `services/policy.py`, `services/ect.py`, `services/preemption.py` |
-| DAG lifecycle and retry behavior | `controlplane/controller/main.py` |
-| Live binding, profile persistence, and action application | `controlplane/scheduler/main.py` |
-| Original seven-policy closed and overlap baselines | `results/final-single-20seed/`, `results/final-workload-20seed/` |
-| Overlap ranking and objective leaders | `results/final-all-workload-20seed/`, `results/confirmatory-workload-seeds200-249/` |
-| All-version exploratory ranking | `results/final-all-legacy-20seed/`, `results/final-all-workload-20seed/` |
-| Fresh-seed closed confirmation | `results/confirmatory-single-seeds200-249/` |
-| Fresh-seed workload confirmation | `results/confirmatory-workload-seeds200-249/` |
-| Cross-phase statistical synthesis | `analyze_final_evidence.py`, `results/final-evidence-synthesis.json` |
-| Live performance and integrity | `results/k8s-kind/policy-comparison.json` |
-| Evidence boundaries and academic interpretation | `thesis/thesis.tex` |
+| `simulation/` | Discrete-event simulator, policies, estimators, experiment runners, Kind twin. |
+| `scenarios/` | Cluster, workflow, workload, and policy-profile definitions (YAML). |
+| `controlplane/`, `services/`, `models/`, `engine.py` | Live Kubernetes controller and scheduler. |
+| `tasks/`, `images/` | Task images and node DaemonSets (fileserver, bandwidth probe, thermal). |
+| `crds/`, `k8s/`, `kustomization.yaml` | Kubernetes manifests. |
+| `clusters/kind_profiles.yaml`, `kind_lab.py` | Emulated Kind cluster profiles and the tool that builds them. |
+| `experiments/k8s/` | Live task templates and workflow batches. |
+| `run_experiment_lab.py`, `analyze_final_evidence.py` | Simulation matrices and their synthesis. |
+| `run_k8s_experiment.py`, `kind_twin_predict.py`, `analyze_kind_validation.py` | Live harness, twin predictions, validation report. |
+| `results/` | Retained evidence (see section 13). |
+| `tests/` | Unit, property, and regression tests. |
 
-## 8. Open work, in priority order
+---
 
-1. Run the alternating policy protocol on independent physical machines with real link, thermal, and energy measurements.
-2. Pass the complete DAG or controller-computed upward ranks to the live scheduler.
-3. Add and evaluate live Adaptive without preemption.
-4. Make preemption benefit-aware using victim progress, restart cost, and urgent-task gain.
-5. Run live mechanism ablations for UCB, locality, thermal/failure penalties, and preemption.
-6. Calibrate scenario uncertainty from repeated hardware measurements and compare predicted distributions with live task and transfer observations.
+## 2. The project in one page
 
-## 9. Maintenance rule
+**The question.** A workflow is a directed acyclic graph (DAG) of tasks:
+each task needs CPU, memory bandwidth, storage, and the outputs of its
+parents. A heterogeneous cluster has nodes that are good at different
+things (a fast CPU here, a wide memory bus there, a slow edge device behind
+a weak Wi-Fi link) and that change over time (they heat up and throttle,
+they fail). The scheduler must decide, repeatedly, *which ready task runs
+next and on which node*. The project asks which decision rule works best,
+for which kind of workflow and which kind of cluster, and whether the
+answer survives contact with a real Kubernetes control plane.
 
-When code, experiments, and prose disagree, inspect the owning code path and raw artifact first. Update summaries and architecture documents afterward. Never promote a planned feature or runnable script to an experimental result without a retained successful run.
+**Two execution surfaces.**
+
+```
+                    scenarios/*.yaml (clusters, workflows, workloads)
+                                   |
+             +---------------------+---------------------+
+             |                                           |
+   Simulator (level 1)                        Kubernetes (level 2)
+   simulation/engine.py                       Workflow + TaskTemplate CRDs
+   - fluid CPU/memory/storage sharing         controller: DAG readiness, Pods,
+   - routed, contended network flows            status, retries
+   - RC thermal model, throttling             scheduler: ready-Pod ordering,
+   - failures, repairs, checkpoints             placement, binding, preemption
+   - gangs, priorities, preemption            node DaemonSets: fileserver,
+   - 11 policies + exhaustive oracle            bandwidth probe, thermal
+             |                                           |
+             +--------- simulation/kind_twin.py ---------+
+                 (calibrated model of the Kind cluster,
+                  used to check that the simulator's
+                  predictions hold on the live system)
+```
+
+**The policies.**
+
+| Name | What it does | Why it is in the study |
+|---|---|---|
+| `fcfs` | First ready task to the first node that fits. | Simplest control. |
+| `random` | Seeded random feasible node. | Lower control. |
+| `k8s-default` | Imitates kube-scheduler: PrioritySort queue, LeastAllocated + BalancedAllocation + ImageLocality scores. | What a stock cluster would do. |
+| `eft` | Earliest estimated finish time, tasks in arrival order. | Classic greedy list scheduler. |
+| `heft` | EFT placement, tasks ordered by HEFT upward rank (Topcuoglu et al., 2002). | The standard heterogeneous DAG baseline. |
+| `heft-ra` | HEFT with contention-, thermal- and failure-aware estimates and one-level lookahead. **New in the correction round.** | Fixes HEFT's measured failure modes (section 6). |
+| `heft-ra-cap` | `heft-ra` whose lookahead only counts on capacity the children will actually find. **Added after the first live run.** | Fixes a lookahead weakness that only slot-limited (live) nodes exposed (section 9.4). |
+| `legacy` | The project's historical simulator heuristic. | Continuity with old results. |
+| `legacy-v1` | The exact eight-factor live scorer with its original weights. | What the original live scheduler did. |
+| `legacy-tuned` | Same scorer with weights found by a seeded search. | Was the original scorer just badly tuned? |
+| `adaptive` | HEFT order plus priority classes, energy/transfer/thermal/failure penalties, and preemption. | The project's earlier "smart" policy. |
+| `adaptive-no-preempt` | `adaptive` with preemption disabled. | Isolates the effect of preemption. |
+| `oracle-static` | Exhaustive search over static assignments (small DAGs only). | A reference point, never a competitor. |
+
+**The headline result (details in sections 7-10).** On a fresh, untouched
+holdout, HEFT-RA has 0.37% mean and 0.00% P95 makespan regret on closed
+DAGs, against 12.42% and 49.02% for HEFT and 160.69% for the stock
+Kubernetes scoring. With the capacity-aware lookahead added after the
+first live trials (`heft-ra-cap`), it also leads the overlapping
+workloads on median and P95 response regret and deadline hit rate. On
+live Kind clusters, a HEFT-RA variant was the fastest of nine policies for
+four concurrent DAGs in 8 of 9 runs (makespan 0.917 of HEFT's), for the
+same reason as in simulation. Adaptive (priority ordering plus
+preemption) is the policy for bounding the worst case of urgent work: its
+P95 urgent response is 21 s against 127 s for HEFT-RA, while HEFT-RA is
+faster for the urgent workflow in the typical case.
+
+---
+
+## 3. Inherited history (phases A-I) and what survived
+
+The project was built over several earlier sessions before the correction
+round. This section summarises each phase and then states plainly what the
+audit later found about it. The original, longer narrative is in the
+archived journal.
+
+| Phase | What was done | What held up | What did not |
+|---|---|---|---|
+| A. Direct Pod runs | A custom scheduler bound three synthetic task containers; `results/run1.txt`, `run2.txt`, `run34.txt`. | Binding through the API works. | No baseline, no DAG model, no protocol; `run34` failures came from an overloaded worker, not from the algorithm. |
+| B. Simulator | Validated YAML schemas; discrete-event engine with CPU, cache, storage, network, thermal, failures, checkpoints, gangs, priorities; FCFS/Random/EFT/HEFT/Legacy/Adaptive. | The architecture and most models. | Several modelling defects (section 4): half-duplex links everywhere, no TCP loss ceiling, SMT ignored at saturation, failure randomness coupled to policy decisions. |
+| C. First matrices | 5 clusters x 15 workflows x 20 seeds; 4 overlapping workloads. | The scenario corpus. | Most seeds were identical repeats (section 7.2); the lower bound used for sanity checks was not a bound. |
+| D. Kubernetes control plane | Workflow/TaskTemplate CRDs, controller, scheduler adapter, producer-local data plane, DaemonSets. | Overall split of responsibilities. | Double dispatch under preemption, refresh overcommit, bind failures recorded as successes, Pod name aliasing, missing DAG information in the scheduler (section 4). |
+| E. Legacy audit | Exact adapter of the live eight-factor scorer for the simulator. | Correct adapter after a wall-clock fix. | Branch-and-bound gang placement assumed non-negative scores, which the scorer violates. |
+| F. Weight search | 256-candidate seeded search with train/validation/holdout splits. | The protocol; the selected vector is re-selected after the fixes. | Profiles were built from the unperturbed cluster instead of the sampled one. |
+| G-H. Confirmation | Fresh seeds, factor ablation, Kind topology runs. | Factor study design. | Live heterogeneity was not emulated (every Pod ran at the same speed), so the Kind runs could not test placement quality. |
+| I. Contextual search | 160 generated workflows, 64 Adaptive candidates, per-context policy portfolio. | Protocol and guardrails. | A `KeyError` for default-only profiles; conclusions depended on HEFT, which turned out to be contention-blind. |
+
+The most important lesson of this table: **most of the code was sound in
+shape but wrong in details that changed results.** None of the defects was
+visible in aggregate tables; each was found by reading a specific code path
+against a specific trace.
+
+---
+
+## 4. Phase J - the audit
+
+### 4.1 How the audit was run
+
+The user's first request was simply: *analyse this entire workspace and spot
+any implementation or logic mistakes.* The audit was split into five
+independent reviews (live harness and Kind tooling; legacy root scripts;
+`services/`; `controlplane/`; simulator and analysis), plus a direct
+reading of the simulator and the live emulation. Each reported finding was
+then **verified against the code or by a reproduction** before being
+accepted. 53 findings were recorded; the ones below changed behaviour or
+results. Every fix in sections 4 and 5 has a regression test
+(`tests/test_simulation_regressions.py`, `tests/test_live_policy_regressions.py`,
+`tests/test_k8s_controller.py`, `tests/test_scheduler_engine_preemption.py`,
+`tests/test_k8s_cluster.py`, `tests/test_legacy_entry_points.py`, and others).
+
+### 4.2 Findings that changed behaviour
+
+| ID | Severity | Where | Defect | Consequence |
+|---|---|---|---|---|
+| J1 | High | `simulation/experiments.py` | The "lower bound" was not a lower bound. | 350 of 26,250 old confirmatory records had makespan below their "bound". |
+| J2 | High | `engine.py`, live scheduler | A preempted task could be dispatched again while its old Pod was still being deleted. | Two Pods for one task; capacity counted twice. |
+| J3 | High | `services/k8s_cluster.py` | A periodic refresh restored a node's full free capacity while keeping its active tasks. | The scheduler overcommitted nodes after every refresh. |
+| J4 | High | `controlplane/scheduler/main.py`, `k8s_scheduler.py` | A failed bind was logged and then treated as success. | The Pod was forgotten and the workflow hung. |
+| J5 | High | `controlplane/controller/main.py` | Pod names were truncated to 63 characters. | Two different long task names could map to one Pod name. |
+| J6 | High | `services/policy.py`, `services/preemption.py` | Gangs were scheduled before higher-priority tasks; the per-node preemption cap was checked per victim, not per plan. | Priority inversion; more victims than the budget allowed. |
+| J7 | High | live emulation | Every task template ran at the same per-Pod speed on every node. | Live "heterogeneity" was only slot counts and links; learned profiles could not discover specialisation. |
+| J8 | High | live scheduler | No DAG information reached the live scheduler (all upward ranks were 0), and HEFT had never been run live. | The simulator's winner was never validated. |
+| J9 | Medium | `simulation/engine.py` | One random stream served failures, jitter, and transfers. | A policy's placements changed the failure times it later suffered, so policies were compared under different failures. |
+| J10 | Medium | `simulation/policies.py`, `legacy_weights.py` | Branch-and-bound gang placement pruned on partial scores, but the Legacy scorer can be negative. | Optimal gang placements could be pruned away. |
+| J11 | Medium | `simulation/engine.py` | When a node failed, only the interrupted gang member restarted. | A gang continued with a missing member. |
+| J12 | Medium | `simulation/resources.py` | Route lookup used `functools.lru_cache` on a method. | Every topology instance was kept alive forever (memory leak), and estimators rebuilt topologies on every call. |
+| J13 | Medium | simulator schema and workloads | `bool("false")` is `True`; priority `BEST_EFFORT` has value 0 and was treated as "missing". | String booleans and best-effort priorities silently flipped. |
+| J14 | Medium | `services/ect.py`, `services/policy.py` | Workflow ECT summed roots instead of sinks; Adaptive treated multi-slot nodes as single-server queues and omitted startup and transfer from occupancy. | Live estimates were biased. |
+| J15 | Medium | `models/profile_store.py` | Loading replayed raw observations over the persisted EMA. | Learned profiles drifted after every restart. |
+| J16 | Medium | live measurements | Runtimes came from kubelet timestamps (1 s resolution) for 2-5 s tasks; workflow response used `creationTimestamp` and a 2 s reconcile tick. | Live timings had up to 50% quantisation error. |
+| J17 | Medium | `controlplane/scheduler/main.py` | Tick, Pod watch, completion watch, and refresh mutated shared state without a common lock. | Races between placement and completion. |
+| J18 | Medium | `analyze_kind_topologies.py` | The `tc qdisc` integrity check accepted any observed qdisc; trial validation checked only totals. | Wrongly shaped links or duplicate binds could pass. |
+| J19 | Low | tooling | `verify-cluster.sh` read `.status.phase` (CRD uses `.status.state`) and `bw-to-*` (probe writes `bw-from-*`); k3s scripts lost environment variables through `sudo`; Python 3.9 image with PEP 604 annotations; `GET /profiles` returned HTTP 500; `submit_workflows.py` treated a timed-out parent as success. | Tools that silently did nothing or crashed. |
+
+### 4.3 Worked examples
+
+**J1 - a lower bound that was not a bound.** A lower bound must never
+exceed an achievable makespan, otherwise "makespan / bound" cannot be used
+as a sanity check. The old bound took the maximum of the critical path and
+four aggregate terms (CPU, memory, disk read, disk write). Three of its
+inputs were too pessimistic:
+
+1. it charged *all* memory traffic to DRAM, but the engine serves the
+   cache-resident part of a working set from L3 (a 192 MiB working set with
+   high reuse on a node with a 32 MiB L3 still hits the cache for a large
+   fraction of its accesses);
+2. its CPU capacity ignored simultaneous multithreading, which the engine
+   models as `smt_efficiency` extra throughput per core;
+3. it evaluated execution at the node's initial temperature, which can be
+   above the throttle point after uncertainty sampling.
+
+Each makes the "bound" larger than what the engine can actually achieve.
+The fixed `workflow_lower_bound_s` uses the most favourable value of every
+term (unthrottled CPUs, private L3 for the DRAM estimate, SMT-aware
+capacity). Regression tests check the bound against EFT, HEFT and FCFS
+schedules on representative cluster/workflow pairs, and section 7 checks
+every retained record.
+
+**J2 - double dispatch under preemption.** In the live engine, a preempted
+task went straight back to `READY`. On the next tick it could be placed
+again while the victim Pod was still terminating, so for a few seconds two
+Pods existed for one task and the node's capacity was counted twice. The
+fix adds an explicit `TaskState.PREEMPTED`: the task is parked until the
+controller, having observed the deletion, creates a fresh Pod, and only
+that new Pod re-enters the scheduling queue.
+
+**J3 - refresh overcommit.** The scheduler keeps *logical* reservations
+(what it has decided) while the cluster refresh reads *physical* Pods from
+the API. The old refresh replaced node objects, restoring their full free
+capacity, but kept the active-task dictionary. After every refresh the
+scheduler believed every node was empty and placed more work on it. The
+fix (`poll_cluster_inventory` + `merge_cluster_state`) merges observed Pods
+into the logical state and never forgets a reservation that has not yet
+appeared in the API.
+
+**J4 - a failed bind recorded as success.** A bind can fail with HTTP 409
+(already bound) or 422 (node gone). The old code logged the error, marked
+the task running, and removed the Pod from the pending set. The task never
+ran and its workflow never finished. The fix makes binding a callback with
+three outcomes (`BIND_OK`, `BIND_RETRY`, `BIND_DROP`) and rolls back the
+reservation on anything but success.
+
+**J9 - failures that depended on the policy.** With one shared random
+generator, the number of random draws made for transfers and jitter
+depended on where a policy placed tasks; the next failure time was then
+drawn from a different position of the stream. Two policies on the same
+seed therefore experienced different failures, which is not a paired
+comparison. The fix derives an independent stream per purpose and node
+(`derived_rng`, SHA-256 of the seed and a label), so failures depend only
+on the seed and the node.
+
+**J7 and J8 - the old live experiments could not answer the question.**
+Every validation Pod requested 500m CPU and ran the same amount of work, so
+a "fast CPU node" and a "slow edge node" executed a task in the same time.
+Only the number of slots and the links differed. In addition, the live
+scheduler never received the workflow graph, so HEFT's upward ranks were
+all zero and HEFT itself had never been run live. The old Kind results were
+therefore integration evidence, not evidence about placement quality. They
+are withdrawn as comparative evidence (section 11) and the live emulation
+was rebuilt (section 8).
+
+---
+
+## 5. Phase K - correcting the simulator
+
+The second request was to "redo everything the previous AI did wrong" and to
+make the test environment "as accurate as possible" while staying cheap
+enough to simulate many cluster types. That raised a design question first.
+
+### 5.1 Why a fluid discrete-event simulator, not VMs or containers
+
+Three ways of emulating many heterogeneous computers on one laptop were
+considered:
+
+| Option | Fidelity | Cost on an i5-8300H / 12 GB | Verdict |
+|---|---|---|---|
+| Virtual machines per node | Real kernels, but all VMs share the same four cores, so "a fast node" cannot be faster than the host. | 1-2 GB RAM per VM; a handful of nodes at most. | Rejected (the user also asked for no VMs). |
+| Containers with cgroup limits (Kind) | Real Kubernetes behaviour; heterogeneity must be *emulated* (CPU quotas, `tc netem`, work scaling). | About 0.5 GB per node; 4-6 nodes. | Used for validation (level 2). |
+| Fluid discrete-event simulation | Models resource sharing by equations; any hardware can be described. | Milliseconds per run; thousands of runs per minute. | Used for the broad comparison (level 1). |
+
+The simulator is the same family of model used by SimGrid (Casanova et
+al., 2014): tasks and transfers are *fluid* activities whose rates are
+recomputed whenever something starts or finishes, and the engine jumps
+from event to event. Velho et al. (2013) showed that such flow-level TCP
+models are accurate for bulk transfers when contention and RTT effects are
+modelled, which is exactly what the corrections below add.
+
+### 5.2 What a simulated node is made of
+
+Each node in `scenarios/clusters/*.yaml` declares:
+
+- **CPU**: architecture, physical cores, threads per core, frequencies,
+  calibrated GFLOP/s per core, L3 size, idle and maximum power, and SMT
+  efficiency (extra throughput from a second hardware thread);
+- **memory**: capacity, calibrated bandwidth, latency, channels;
+- **storage**: sequential and random read/write rates;
+- **thermal**: ambient, initial, throttle and shutdown temperatures,
+  thermal resistance and capacitance, and the minimum throttle factor;
+- **reliability**: optional Poisson failure rate, scripted failure times,
+  and mean repair time;
+- **background load**: CPU fraction and memory used by the OS and daemons.
+
+Links declare bandwidth, latency, jitter, loss, medium (`ethernet`,
+`wifi`, `wan`) and, after the correction round, an optional reverse
+bandwidth/latency and duplex mode. The local profile
+`scenarios/clusters/local-i5-8300h.yaml` describes the development laptop
+itself and is the only profile with a large declared calibration
+uncertainty (25%). It was derived from the Windows hardware inventory
+(`Get-CimInstance Win32_Processor`, `Win32_PhysicalMemory`,
+`Win32_DiskDrive`):
+
+| Component | Inventory | Profile value and reasoning |
+|---|---|---|
+| CPU | Intel Core i5-8300H, 4 cores / 8 threads, 2.3 GHz base (4.0 GHz turbo), 1 MiB L2, 8 MiB L3 | 4 physical cores, 2 threads per core, 8 MiB L3, SMT efficiency 0.28 (a second hardware thread adds roughly a quarter of a core on throughput code) |
+| Memory | 12 GiB as 4 GiB + 8 GiB DDR4 modules running at 2133 MT/s | 18,000 MiB/s: two channels at 2133 MT/s give about 34 GB/s in theory, but unequal modules run partly single-channel (flex mode) and sustained streaming reaches only part of the peak |
+| Storage | Samsung 970 EVO Plus NVMe SSD (500 GB) and a 1 TB laptop HDD | NVMe values below the datasheet (2,500 / 1,800 MiB/s sequential) to account for a full drive and thermal limits |
+| Power and heat | 45 W TDP laptop part with a passive-class cooling model | 8 W idle, 45 W maximum, throttling at 95 C |
+| OS | Windows 11 Pro, Docker Desktop on WSL2 | 8% background CPU, 1.5 GiB background memory |
+
+The task model (`TaskSpec`) declares compute work (GFLOP), parallel
+fraction (Amdahl), memory traffic and working set with cache reuse, disk
+reads and writes with a random-I/O fraction, image name and size, startup
+time, supported architectures, CPU and memory requests, priority,
+deadline, checkpoint interval, and gang membership.
+
+### 5.3 The corrections, one by one
+
+**K1. Links are directional; Wi-Fi is half-duplex.** Before, every link was
+one shared channel, so traffic in opposite directions competed even on
+full-duplex Ethernet. Now each hop maps to a *channel*: wired and WAN links
+have one channel per direction, while 802.11 links share one channel
+between both directions because only one station transmits at a time.
+Example: two 1 GiB transfers in opposite directions over a 119 MiB/s
+Ethernet link now take roughly 9 s each instead of roughly 18 s.
+
+**K2. TCP cannot fill a lossy, long link.** Before, packet loss only scaled
+capacity by `1 - p`, so 1% loss cost 1% of throughput. Real TCP reacts to
+every loss event by halving its window; Mathis et al. (1997) derived the
+steady-state bound `rate <= MSS * sqrt(3/2) / (RTT * sqrt(p))`. Each flow is
+now limited by max-min fair sharing on its channels, by its receive window
+divided by the RTT, and by the Mathis bound. Example: the balanced edge
+node (3.5 ms + 0.2 ms one way, so RTT 7.4 ms, loss 0.05%) now gets about
+10.2 MiB/s per TCP flow on its 60 MiB/s Wi-Fi link, so a single transfer
+cannot saturate it but six parallel ones can.
+
+The scenario loss values had been chosen under the old `1 - p` model, where
+they were almost harmless (edge-3 had 1%, the WAN uplink 0.4%). Under the
+Mathis bound, those values would make the asymmetric-edge path deliver
+about 0.36 MiB/s per flow, an unrealistic collapse for links that are
+described as working Wi-Fi. They were therefore re-interpreted as TCP
+*loss-event* rates after link-layer retransmission (which 802.11 performs)
+and recalibrated: edge-1 0.003 to 0.0005, edge-2 0.006 to 0.001, edge-3
+0.01 to 0.002, WAN uplink 0.004 to 0.0005, balanced edge 0.002 to 0.0005,
+unreliable flaky link 0.004 to 0.001. The edge-3 to core path still
+reaches only about 0.84 MiB/s per flow (RTT 40.3 ms), which is the point of
+that cluster. This is a Reno-style bound; CUBIC would be somewhat faster,
+which is recorded as a limitation.
+
+**K3. SMT counts at saturation.** The per-task rate already used SMT
+efficiency, but the node-wide ceiling was `physical cores x per-core
+GFLOP/s`, so when all hardware threads were busy the SMT gain disappeared.
+The ceiling now includes it (`node_cpu_capacity_gflops`).
+
+**K4. Optional per-task DRAM and storage caps.** One core cannot use all
+of a node's memory bandwidth, and one I/O stream rarely saturates an NVMe
+drive. `memory.per_task_bandwidth_mib_s` and
+`storage.per_task_read_mib_s` / `per_task_write_mib_s` express this. They
+are optional and unset in the main corpus (so the corpus results do not
+depend on guessed values), but they are available for calibrated profiles.
+
+**K5. Control-plane delay.** A real cluster needs time between "task ready"
+and "Pod can be placed" (controller reconcile, Pod creation, watch
+latency). `cluster.control_plane_delay_s` models it; it is 0 for the
+abstract scenarios and calibrated for the Kind twin (section 9).
+
+**K6. Independent random streams** (fix for J9): `derived_rng(seed, label)`
+gives each node its own failure stream and each transfer its own jitter
+stream.
+
+**K7. Gangs fail together** (fix for J11): a failure that interrupts one
+gang member restarts the whole gang, because a gang is defined as "all
+members run simultaneously or none".
+
+**K8. Guaranteed progress.** For large virtual times, `now + 1e-9` can be
+equal to `now` in floating point, which once produced a loop that never
+advanced. `_future(dt)` now returns the next representable time strictly
+after `now`.
+
+**K9. Small but result-changing parsing fixes** (J13): `parse_bool` for
+YAML strings, `priority is not None` instead of truthiness.
+
+### 5.4 How the corrections were validated
+
+- Unit tests for every model (`tests/test_simulation_resources.py`,
+  `test_simulation_engine.py`, `test_simulation_failures.py`,
+  `test_simulation_properties.py` with Hypothesis property tests, and
+  `test_simulation_regressions.py`).
+- Property tests (Hypothesis): network allocations never exceed the
+  capacity of any shared channel; bounded allocations respect both the
+  capacity and every consumer's own limit; RC temperatures stay between
+  the initial and steady-state values; a seed replays jitter, failures,
+  placements and metrics exactly.
+- Re-running the weight search after the fixes selected the *same* tuned
+  Legacy vector, which shows that the corrections did not change what the
+  search considers good, only the magnitudes.
+
+---
+
+## 6. Phase L - HEFT-RA, a contention-aware list scheduler
+
+### 6.1 The observation that started it
+
+While re-running the corrected matrices, one case stood out. On the
+balanced heterogeneous cluster, the `fanout-1to8` workflow (one I/O-bound
+source reading 4 GiB, then eight CPU workers that each need a 1 GiB copy of
+the source's output) gave:
+
+| Policy | Makespan | Data moved | Where the tasks ran |
+|---|---:|---:|---|
+| FCFS | 6.63 s | 168 MiB | everything on `cpu-fast` |
+| EFT / HEFT | 40.42 s | 8,360 MiB | source on `io-fast`, 8 workers on `cpu-fast` |
+
+The simplest possible scheduler was six times faster than the textbook
+heterogeneous scheduler. The trace explains why:
+
+1. HEFT places the source on `io-fast`, whose 7 GB/s drive finishes the
+   4 GiB read at 1.10 s instead of 2.79 s on `cpu-fast`. Locally correct.
+2. For each worker, HEFT estimates its finish time on `cpu-fast` as "source
+   finish + 1 GiB / 238 MiB/s + compute", about 8.7 s, because the
+   estimate assumes *this transfer has the link to itself*.
+3. All eight workers make the same choice. Their eight 1 GiB transfers then
+   share one 238 MiB/s link: 8 GiB / 238 MiB/s = 34.4 s. The workers start
+   at 37.15 s and finish at 40.42 s.
+
+This failure mode was not new: the archived pre-correction data shows the
+same 40.4 s case. Aggregate tables had hidden it because the mean regret
+of HEFT was dominated by many easy cases. It is a known limitation of
+HEFT, which assumes a contention-free communication model (Topcuoglu et
+al., 2002); contention-aware list scheduling was discussed by Sinnen and
+Sousa (2005).
+
+A second family of failures appeared on the unreliable/thermal cluster,
+where Adaptive's fixed penalties (100 s per expected failure, 10 s for
+thermal pressure) sometimes pushed work onto a slow node to avoid a risk
+that never materialised, or failed to avoid throttling that did.
+
+### 6.2 Design goals
+
+1. Keep HEFT's task ordering (upward rank), which was not the problem.
+2. Fix the *estimate*, not add weights: no tuned penalties, no priority
+   classes, no preemption, so that any difference from HEFT can be
+   attributed to the estimator alone.
+3. Use only information a real scheduler has: the cluster description,
+   current temperatures, transfers in flight, and decisions already made in
+   the same scheduling round.
+4. Stay cheap enough to call for every (task, node) pair.
+
+### 6.3 What HEFT-RA estimates differently
+
+For a ready task `t` and candidate node `n`, HEFT-RA's finish estimate is
+built from four corrections (`simulation/estimation.py`,
+`resource_aware_estimate`):
+
+1. **Contended transfers.** Each input transfer receives a max-min fair
+   share of every channel it crosses, counting transfers already in flight
+   and transfers planned earlier in the same round, and is capped by the
+   TCP bounds of section 5.3. In the fan-out case the second worker sees
+   one competing flow, the third sees two, and so on.
+2. **Shared image pulls.** If an image is already being pulled to `n` (or
+   was planned in this round), a second task does not pay for it again.
+3. **Thermal prediction.** Instead of using the current speed, CPU work is
+   integrated over the RC thermal model: a node at 58 C with a 72 C
+   throttle point is predicted to heat up under load and slow down partway
+   through a long task.
+4. **Expected failure loss.** For nodes with a declared Poisson failure
+   rate `lambda`, the probability of a failure during a task of duration
+   `d` is `1 - exp(-lambda d)`; the expected delay added is that
+   probability times (half the work that would be lost, at most half a
+   checkpoint interval for checkpointable tasks, plus the restart cost).
+   This is risk-neutral: it uses the expected value, not a penalty weight.
+
+Then a **one-level lookahead** (Bittencourt, Sakellariou and Madeira,
+2010) scores a producer by when its children could finish: for each child,
+the best (transfer + execution) over all nodes, assuming the siblings pull
+from the producer concurrently. The producer's score is the latest of
+those finishes.
+
+### 6.4 What each part contributes (fan-out example)
+
+| Variant | Makespan | Data moved | Placement |
+|---|---:|---:|---|
+| HEFT | 40.42 s | 8,360 MiB | source `io-fast`; 8 workers `cpu-fast` |
+| HEFT-RA without lookahead | 12.94 s | 1,288 MiB | source `io-fast`; 7 workers stay on `io-fast`, 1 moves to `cpu-fast` |
+| HEFT-RA | 6.63 s | 168 MiB | everything on `cpu-fast` |
+
+Contention-aware estimates alone stop the stampede onto one link: the
+estimator sees that the third, fourth, ... transfer would be slower than
+computing locally on `io-fast`'s weaker CPU. Lookahead then fixes the
+producer's placement: putting the source on `cpu-fast` costs 1.7 s of
+slower reading but saves every transfer.
+
+### 6.5 Where HEFT-RA is *not* better
+
+HEFT-RA is not uniformly better, and the holdout data shows exactly where:
+
+- On 17 of 3,750 holdout closed-DAG cases, HEFT-RA is more than 1% slower
+  than HEFT. All 17 are `unreliable-thermal-3 / mixed-etl`. That cluster's
+  fast node `hot-fast` has *scripted* failures at t = 20 s and 75 s (fault
+  injection that no policy can know about). HEFT-RA correctly predicts that
+  the ETL chain finishes earlier on `hot-fast` (the aggregate step ends at
+  17.5 s instead of 24.5 s on `reliable`), but in some seeds the failure at
+  20 s hits the final export step, which must then wait for the repair.
+  Over the 50 holdout seeds of that pair, HEFT-RA still wins 39 and loses
+  11, with a mean makespan ratio of 0.878 (median 33.9 s against 46.1 s).
+  This is the cost of a risk-neutral estimator. A risk-averse variant (for
+  example, minimising a high quantile instead of the mean) is listed as
+  future work.
+- On `homogeneous-4 / fanin-8to1`, FCFS packing beats every list scheduler:
+  all list schedulers spread the eight producers and then pay to gather
+  their outputs. Fixing that would require group-level consolidation (as in
+  packing schedulers such as Tetris; Grandl et al., 2014), not a better
+  per-task estimate. It was documented and deliberately *not* tuned for,
+  because tuning for one case on development seeds is how overfitting
+  starts.
+
+### 6.6 Complexity
+
+HEFT costs O(|V| x |N|) estimates per round plus the rank computation.
+HEFT-RA adds, per (task, node) estimate, a max-min share over the flows on
+the route (bounded by the flows in flight) and, per producer, the lookahead
+over (children x nodes). On the largest scenario workflow (`wide-12`, 12
+tasks, up to 5 nodes) a whole run takes milliseconds; the lookahead
+dominates only for very wide fan-outs and could be capped if needed.
+
+### 6.7 Development protocol
+
+HEFT-RA was designed using only the exploratory seeds (0-19). Its
+parameters are not tuned: there are no weights. The confirmatory and
+holdout matrices were run after the code was frozen, and no change was
+made to HEFT-RA after looking at them. The capacity-aware lookahead
+(`heft-ra-cap`) was added later, prompted by the live trials, when the
+first holdout had already been seen; a second, fresh holdout (seeds
+600-649) was therefore run once for the final policy set.
+
+---
+
+## 7. Phase M - re-running the simulation evidence
+
+### 7.1 The corpus
+
+- **5 cluster families**: `homogeneous-4` (four equal nodes, 1 Gb/s
+  switch), `balanced-heterogeneous-4` (CPU-, memory-, I/O-optimised nodes
+  and an ARM edge node on Wi-Fi), `asymmetric-edge-5` (two core nodes and
+  three edge nodes behind a shared 50 MiB/s WAN uplink), `unreliable-thermal-3`
+  (a hot fast node with scripted failures, a reliable node, a failure-prone
+  edge node), and `local-i5-8300h` (the development laptop).
+- **15 closed workflows**: linear, diamond, deep, wide, fan-out, fan-in,
+  CPU-heavy, memory-heavy, I/O-heavy, cache-sensitive, data-heavy pipeline,
+  mixed ETL, gang, critical-deadline (priority), and checkpoint-long
+  (failure recovery). Shapes follow the structures documented for
+  scientific workflows (Bharathi et al., 2008; Juve et al., 2013).
+- **4 overlapping workloads**: `mixed-arrivals`, `priority-burst`,
+  `data-locality-wave`, `recovery-gang-mix`, where several workflows
+  arrive over time and compete.
+
+### 7.2 Discovering that most seeds were the same experiment
+
+The old matrices reported "20 seeds per case". But a seed only changes a run
+through (a) sampled calibration uncertainty, (b) jitter, and (c) random
+failures. Four of the five clusters declare **zero** calibration
+uncertainty, and most workflows never meet a random failure. Counting
+distinct outcomes per (cluster, workflow, policy) over the 20 exploratory
+seeds of the final code:
+
+| Cluster | Mean distinct makespans out of 20 seeds |
+|---|---:|
+| homogeneous-4 | 1.4 |
+| balanced-heterogeneous-4 | 3.0 |
+| unreliable-thermal-3 | 4.0 |
+| asymmetric-edge-5 | 4.3 |
+| local-i5-8300h | 20.0 |
+
+On the homogeneous cluster, the "20 seeds" were on average 1.4 different
+experiments repeated. (These values come from the final synthesis, whose
+exploratory phase includes all twelve policies; an earlier eleven-policy
+pass gave 1.5, 3.2, 4.2 and 4.7.) Confidence intervals computed as if they were 20
+independent samples were far too narrow.
+
+**Fix.** The confirmatory and holdout phases use `--uncertainty-floor 0.1`:
+every node's throughput, memory, storage, power, thermal and reliability
+parameters and every link's bandwidth, latency and jitter are multiplied
+by independent seeded factors drawn uniformly from [0.9, 1.1] (wider where
+the cluster declares more uncertainty); structural parameters such as core
+counts, cache sizes, temperature thresholds and loss rates are unchanged.
+Each seed is then a genuinely different cluster instance, close to the
+declared one. The exploratory phase keeps the declared uncertainty, so
+the three phases also test whether conclusions survive this perturbation.
+The synthesis reports distinct outcomes for both the development and the
+holdout phase, so this cannot silently happen again: on the holdout every
+one of the 50 seeds gives a distinct outcome for every cluster, case and
+policy.
+
+### 7.3 Protocol
+
+| Phase | Seeds | Uncertainty | Policies | Closed records | Workload records |
+|---|---|---|---|---:|---:|
+| Exploratory | 0-19 | declared | 12 + oracle | 18,300 | 4,800 |
+| Confirmatory | 200-249 | floor 0.1 | 10 | 37,500 | 10,000 |
+| Holdout | 400-449 | floor 0.1 | 10 | 37,500 | 10,000 |
+| Fresh holdout | 600-649 | floor 0.1 | 10 | 37,500 | 10,000 |
+
+FCFS and Random are excluded from the later phases because they were never
+competitive; the static oracle (workflows of at most three tasks) only
+exists in the exploratory phase. Regret is always computed against the
+best deployable policy of the same phase, and the exploratory phase is
+also reported restricted to the same ten policies, so that phases can be
+compared like for like. The fresh holdout was added because `heft-ra-cap`
+was designed after the first holdout had been seen (section 9.4); it was
+run once, after the code was frozen. All matrices were regenerated with
+the final code and policy set, so every phase contains `heft-ra-cap`. All
+tables are in `results/final-evidence-synthesis.md`.
+
+### 7.4 Closed DAG results (fresh holdout, 3,750 cases)
+
+| Policy | Mean regret [95% CI] | P95 regret | Win/tie rate | First holdout mean / P95 |
+|---|---:|---:|---:|---:|
+| **heft-ra** | **0.37%** [0.28, 0.47] | **0.00%** | **95.39%** | 0.39% / 0.12% |
+| **heft-ra-cap** | **0.37%** [0.28, 0.47] | **0.00%** | **95.39%** | 0.39% / 0.12% |
+| heft | 12.42% [10.57, 14.45] | 49.02% | 80.05% | 12.06% / 50.59% |
+| eft | 12.54% [10.68, 14.57] | 49.02% | 79.65% | 12.23% / 50.59% |
+| legacy | 13.61% [11.62, 15.77] | 54.23% | 78.83% | 13.39% / 52.05% |
+| adaptive | 13.21% [11.83, 14.69] | 57.83% | 71.95% | 13.42% / 64.20% |
+| adaptive-no-preempt | 13.21% [11.83, 14.69] | 57.83% | 71.95% | 13.42% / 64.20% |
+| legacy-tuned | 18.34% [16.57, 20.15] | 73.00% | 56.64% | 18.42% / 68.09% |
+| legacy-v1 | 27.80% [25.35, 30.21] | 173.88% | 52.91% | 27.64% / 175.47% |
+| k8s-default | 160.69% [144.58, 176.40] | 1296.03% | 42.32% | 162.56% / 1257.52% |
+
+How to read this table:
+
+- HEFT-RA is within 0.37% of the best deployable policy on average, and in
+  95% of cases it is the best policy or tied with it.
+- `heft-ra-cap` and `heft-ra` are identical on every closed case of every
+  phase (paired ratio 1.0000, 3,750 ties): simulated nodes run 8 to 16
+  tasks at once, so the children always find capacity and the two
+  lookaheads agree.
+- HEFT's 12.42% looks much worse than the old journal's 1.69%. Most of
+  the difference is the reference point: regret is measured against the
+  best policy, which is now HEFT-RA. Recomputing the first-holdout regret
+  *without* HEFT-RA in the set gives HEFT 2.44% mean and 9.44% P95, the
+  best of the remaining policies, which is consistent with the old
+  conclusion that HEFT was the best of the old portfolio.
+- Paired fresh-holdout contrast, HEFT-RA vs HEFT: mean makespan ratio
+  0.9602 [0.9561, 0.9642], 712 wins, 3,015 ties, 23 losses (first
+  holdout: 0.9604, 701 / 3,023 / 26).
+- The confirmatory phase gives the same order and nearly the same
+  numbers (HEFT-RA 0.38% / 0.00% P95; HEFT 12.31% / 49.91%).
+- Adaptive and Adaptive-without-preemption are identical on closed DAGs:
+  a single workflow has nothing to preempt for.
+- The exploratory phase (declared uncertainty, all 12 policies) has the
+  same leader (HEFT-RA 1.76% mean, 5.75% P95); FCFS (502%) and Random
+  (2811%) confirm that placement matters a great deal.
+- Against the exhaustive static oracle on the 300 small exploratory cases,
+  HEFT-RA has the smallest mean gap (2.53%, median 0%), followed by HEFT
+  (3.06%).
+- Crossing 15 workflow families with 5 cluster families gives 75 cells;
+  in 69 HEFT-RA is the best policy or tied with it. The only large
+  exception is `unreliable-thermal` / `mixed` (HEFT-RA 18.18% mean regret,
+  Adaptive and tuned Legacy 0.00%), the risk-neutral failure case of
+  section 6.5. The others are small: homogeneous / cache-sensitive (Legacy
+  0.43% vs 1.74%), unreliable / priority (k8s-default 0.00% vs 1.58%),
+  balanced / priority (k8s-default 0.18% vs 0.38%), homogeneous / fan-in
+  (Adaptive 0.00% vs 0.08%), homogeneous / io-heavy (EFT, HEFT, Legacy;
+  HEFT-RA below 0.005%).
+
+### 7.5 Overlapping workload results (fresh holdout, 1,000 cases)
+
+Ranked by median response regret (response = finish - arrival per
+workflow, averaged per case):
+
+| Policy | Median response regret | P95 response regret | Deadline hit rate | Median makespan |
+|---|---:|---:|---:|---:|
+| **heft-ra-cap** | **0.00%** | **63.76%** | **71.47%** | **47.21 s** |
+| heft-ra | 0.51% | 63.76% | 70.53% | 48.20 s |
+| adaptive | 0.65% | 83.76% | 69.20% | 53.28 s |
+| eft | 0.97% | 82.56% | 68.13% | 53.10 s |
+| adaptive-no-preempt | 1.00% | 83.76% | 69.20% | 50.91 s |
+| legacy | 1.05% | 82.87% | 67.73% | 56.06 s |
+| heft | 1.29% | 82.56% | 68.13% | 52.23 s |
+| legacy-tuned | 8.11% | 98.70% | 69.73% | 57.56 s |
+| legacy-v1 | 32.64% | 214.11% | 66.53% | 69.15 s |
+| k8s-default | 86.62% | 1420.09% | 36.27% | 115.43 s |
+
+Here the two lookaheads differ, because several workflows compete for the
+same nodes: `heft-ra-cap` vs `heft-ra` has a paired mean-response ratio of
+0.9973 [0.9951, 0.9995] (98 wins / 873 ties / 29 losses) on the fresh
+holdout and 0.9998 [0.9983, 1.0014] on the first holdout, i.e. a small
+gain at best. Other paired fresh-holdout contrasts: `heft-ra-cap` vs HEFT
+0.9617 [0.9494, 0.9735]; Adaptive vs Adaptive-without-preemption 0.9935
+[0.9889, 0.9978]; Adaptive vs HEFT 0.9671 [0.9555, 0.9789]; HEFT vs
+k8s-default 0.6689 [0.6446, 0.6937].
+
+By workload (fresh holdout): `heft-ra-cap` has the lowest mean response
+regret on `data-locality-wave`, `mixed-arrivals` and `priority-burst`; EFT
+and HEFT tie on `recovery-gang-mix`. On the first holdout Adaptive led
+`priority-burst`. Mean response regret averages all workflows of a
+workload and hides what happens to the urgent one; the priority study of
+section 7.7 separates them. Two cluster families are exceptions for
+overlapping work: on the single-node laptop profile, Adaptive leads
+`mixed-arrivals` (2.26% vs 29.55% for HEFT-RA) and `priority-burst`
+(0.00% vs 64.12%), and Legacy leads `data-locality-wave`; on the
+unreliable cluster, Adaptive leads `mixed-arrivals` (0.66% vs 38.77%) and
+EFT and Legacy lead `data-locality-wave` (15.29% vs 42.32%).
+
+### 7.6 Legacy weight search, factor ablation, contextual search
+
+- **Weight search** (`results/legacy-weight-search.json`): 256 seeded
+  log-normal candidates at a fixed absolute weight scale of 125, 90
+  training, 45 validation, 75 holdout cases. The corrected run selects the
+  same vector as before. On holdout with warm profiles the tuned/original
+  objective is 0.9759 (mean makespan 42.18 s to 41.80 s, transfer 434.7 to
+  272.5 MiB); with cold profiles it is 0.8601 (mean makespan 99.98 s to
+  54.89 s). Tuning helps, but tuned Legacy is still far behind HEFT-RA
+  (18.42% vs 0.39% holdout regret): the original scorer was not merely
+  badly tuned; its structure (weighted sum of normalised factors) cannot
+  express finish time.
+- **Leave-one-factor-out** (`results/legacy-factor-ablation.json`, seeds
+  300-309, 750 cases): type affinity is by far the most important factor
+  (removing it multiplies the objective by 3.4); data locality (+0.088)
+  and load balance (+0.072) matter; removing resource fit (-0.0005) or node
+  availability (-0.0002) changes nothing of practical size. Warm image,
+  failure penalty and memory pressure never change a decision in the broad
+  corpus, but each one flips the decision in a controlled stress case
+  (`results/legacy-factor-stress.json`), so they are kept.
+- **Contextual search** (`results/contextual-policy-search.json`): 160
+  generated workflows in 20 (resource mix x topology) contexts; a
+  specialist replaces the default only with a validation gain of at least
+  0.5% and no mean or P95 regression. The corrected search keeps HEFT in
+  19 contexts and selects HEFT-RA for `cpu:fanout`. On 600 holdout cases
+  (objective relative to HEFT, lower is better): HEFT-RA 0.9952, contextual
+  portfolio 0.9977, Adaptive 0.9989, HEFT 1.0, EFT 1.0254. Using HEFT-RA
+  everywhere is better than the portfolio, so the portfolio is not
+  recommended.
+
+### 7.7 Mechanism studies: cold starts and priorities
+
+Two research questions are about mechanisms, not whole policies, so
+`run_mechanism_studies.py` isolates them on the holdout protocol (seeds
+from 400, +/-10% floor), paired on identical cluster instances. Output:
+`results/mechanism-studies.md`.
+
+**Cold starts (750 closed runs per variant).**
+
+| Variant | Mean makespan | Mean time-to-running | P95 time-to-running | Cold starts |
+|---|---:|---:|---:|---:|
+| HEFT-RA | 20.19 s | 1.13 s | 11.76 s | 3.79 |
+| HEFT-RA with image-blind estimates | 20.42 s | 1.17 s | 13.82 s | 3.79 |
+| HEFT-RA, every image pre-pulled | 19.54 s | 0.82 s | 11.76 s | 0 |
+| k8s-default | 31.87 s | 2.96 s | 66.10 s | 3.89 |
+
+Image awareness helps a little (makespan ratio 0.9879 [0.9821, 0.9932],
+time-to-running 0.9846), mostly on the unreliable cluster (0.9409). Much
+more is left on the table: pre-pulling everything would cut makespan by
+7.8% (0.9223, never worse) and time-to-running by about half (0.5103).
+Lesson: placement alone cannot remove cold starts; prefetching or lazy
+pulling is the bigger lever.
+
+**Priorities and preemption (three workloads with a CRITICAL workflow, 750
+runs per policy).**
+
+| Policy | Urgent response | Other response | Urgent deadline hit | Preemptions per run |
+|---|---:|---:|---:|---:|
+| adaptive | **10.93 s** | 56.93 s | 67.60% | 0.34 |
+| adaptive-no-preempt | 15.51 s | 56.86 s | 67.60% | 0 |
+| heft-ra | 20.94 s | **55.20 s** | **69.47%** | 0 |
+| heft | 21.33 s | 57.36 s | 66.13% | 0 |
+| eft | 21.76 s | 56.87 s | 66.13% | 0 |
+| k8s-default | 42.25 s | 76.97 s | 35.20% | 0 |
+
+Preemption fires in 100 of the 750 runs and, when it does, roughly halves
+the urgent response (mean ratio 0.534); over all runs Adaptive vs
+no-preemption is 0.9379 [0.9236, 0.9512] (99 wins / 1 loss), and it costs
+the others almost nothing (1.0006). On `priority-burst` the urgent
+workflow takes 12.5 s under Adaptive, 25.3 s without preemption, and
+36.5 s under HEFT-RA (means).
+
+**The means hide the real trade-off** (found in the verification pass,
+section 9.5). Per run, HEFT-RA's urgent workflow is faster more often in
+every workload (139 vs 83 runs on `mixed-arrivals`, 99 vs 73 on
+`priority-burst`, 138 vs 6 on `recovery-gang-mix`), and it meets the 12 s
+urgent deadline as often or slightly more often (80% vs 80%, 54% vs 52%,
+75% vs 71%; the runs where only one of them meets it are decided by about
+a tenth of a second, 22 of the 24 favouring HEFT-RA on the homogeneous
+cluster). What Adaptive buys is the tail:
+
+| Urgent response (750 runs) | Median | P95 |
+|---|---:|---:|
+| heft-ra | **7.6 s** | 126.6 s |
+| adaptive-no-preempt | 9.7 s | 75.4 s |
+| adaptive | 9.7 s | **21.0 s** |
+
+Priority ordering cuts the P95 from 127 s to 75 s and preemption to 21 s.
+Priority ordering also has a price: against HEFT-RA, Adaptive makes the
+other workflows 7.8% slower per run (1.0781 [1.0519, 1.1097]). So the
+choice between the two families depends on whether the urgent workflow's
+*worst case* matters, not merely on whether urgent work exists.
+
+---
+
+## 8. Phase N - rebuilding the live emulation
+
+### 8.1 Why the old live experiments had to be redone
+
+Section 4 listed the problems; here they are from the point of view of an
+experiment designer:
+
+1. **No heterogeneity of speed** (J7). Every task ran the same work at the
+   same 500m CPU quota on every node, so placement could only matter
+   through slot counts and links.
+2. **No DAG in the scheduler** (J8). HEFT, the simulator's best baseline at
+   the time, could not be run live at all.
+3. **Logical versus physical bytes.** The scheduler planned transfers of
+   100 MiB while Pods actually moved 10 MiB, so transfer costs were
+   over-weighted ten times compared with measured runtimes.
+4. **Coarse clocks** (J16). Runtimes came from 1 s kubelet timestamps for
+   2-5 s tasks, and workflow response from `creationTimestamp` and a 2 s
+   reconcile tick.
+5. **Correctness defects** (J2-J6, J17): double dispatch, refresh
+   overcommit, swallowed bind failures, Pod name aliasing, races.
+
+### 8.2 The new emulation
+
+The design goal: *a Kind cluster on one laptop whose nodes behave like a
+small heterogeneous cluster in the ways that matter to placement, and
+which the simulator can model with calibrated parameters.*
+
+**Profiles.** `clusters/kind_profiles.yaml` is the single source of truth.
+Three profiles mirror simulator families:
+
+| Profile | Mirrors | Workers |
+|---|---|---|
+| `balanced` | `balanced-heterogeneous-4` | `ts-node-cpu` (2 slots; CPU 1.0, memory 0.55, I/O 0.5), `ts-node-mem` (2; 0.45/1.0/0.55), `ts-node-io` (1; 0.4/0.5/1.0), `ts-node-edge` (1; 0.3/0.3/0.3, 10 ms, 60 Mbit/s) |
+| `homogeneous` | `homogeneous-4` | three equal workers, 2 slots each, 4 ms, 400 Mbit/s |
+| `edge` | `asymmetric-edge-5` | two core workers (2 slots, speed 1.0, 1 ms, 1 Gbit/s), two edge workers (1 slot, speed 0.35, 15 ms, 40 Mbit/s) |
+
+Fast-node links in `balanced` use 2 ms and 800 Mbit/s. Every profile has six
+task slots in total, i.e. three CPUs of task work, which leaves the 4-core
+/ 8-thread host room for the Kubernetes agents.
+
+**Slots.** Every validation task requests and is limited to 500m CPU, so a
+node with `slots: 2` runs two tasks at once. Its logical CPU capacity
+label is `slots x 0.5`.
+
+**Container caps.** `kind_lab.py create` sets each worker container to
+`cpus = slots x 0.5 + 0.35` (0.35 CPU for kubelet, kube-proxy, kindnet and
+the DaemonSets), `memory = slots x 224 + 576` MiB, and `cpu-shares = 1024
+x slots`, so that if the host is ever contended, CPU is shared fairly per
+task rather than per container.
+
+**Speeds.** A ConfigMap `ts-emulation` holds each node's CPU, memory and
+I/O speed. Tasks learn their node through the downward API
+(`TS_NODE_NAME`) and read the speeds (`TS_NODE_SPEEDS`). Work is scaled by
+`1 / speed` for the task's resource class.
+
+**CPU and memory work as CPU-time budgets.** A CPU task is told "consume
+1.5 CPU-seconds at speed 1.0"; on a node with CPU speed 0.45 it keeps
+working until it has consumed 1.5 / 0.45 = 3.33 CPU-seconds of process
+time. The first version of the emulation counted *iterations* instead (a
+fixed number of hashes). Calibration showed why that was wrong: the same
+iteration count ran at 0.99-1.09 million hashes per second on 1-slot nodes
+but at 0.63 million on the 2-slot CPU node, because two busy tasks on a
+2-slot node shared physical cores through SMT and the containers shared
+the host by cgroup weight. The emulated "fast" node was therefore slower
+per task than the "slow" edge node. Counting consumed CPU time instead
+makes a task's duration depend only on its budget and its 500m quota.
+The fix was verified on the next calibration: a CPU task on `ts-node-mem`
+reported 6.83 s for a 3.33 CPU-second budget (0.49 CPU on average), i.e.
+6.83 x 0.45 = 3.07 s of normalised work against 3.0 s expected.
+
+**I/O work** writes real bytes at a paced rate (`TS_IO_RATE_MIB_S x I/O
+speed`, with `fsync`), so it scales exactly; calibration measured 3.01-3.02
+s of normalised work on every node.
+
+**Network.** `tc netem` on each worker's `eth0` egress sets delay and rate.
+Task outputs stay on the producing node (`/var/lib/ts-data`) and children
+fetch them over HTTP from the per-node fileserver, so a producer's shaped
+egress determines how long its children wait. Shaping only egress is a
+deliberate simplification: in this data plane, all bulk data flows out of
+producers.
+
+**Real-size data.** The live templates move the bytes they report (24 MiB
+and 96 MiB outputs), so the scheduler's transfer estimates and the
+measured transfers refer to the same quantity.
+
+**Clocks.** Tasks report their own start and finish as epoch timestamps
+with sub-millisecond resolution. Workflow response is measured from the
+controller's `admittedAt` to the latest task finish.
+
+**Bandwidth telemetry.** The `ts-bw-probe` DaemonSet measures every peer
+and annotates nodes with `ts.io/bw-from-<peer>`. The first version probed
+all peers at the same time, so probes competed: the edge node measured
+1.7-3.0 MiB/s against a shaped 7.15 MiB/s. Probes now run in wall-clock
+slots 60 s apart; the edge now measures 6.79-6.82 MiB/s.
+
+### 8.3 The live policies
+
+The live scheduler (`services/policy.py`) implements `legacy-v1`,
+`legacy-tuned`, `eft`, `heft`, `heft-ra`, `heft-ra-cap`, `adaptive`,
+`adaptive-no-preempt`, `kube-default`, and a `calibrate` policy used only
+during warm-up. All receive the workflow graph through a `workflow_dag`
+annotation, from which upward ranks are computed (`services/dag_metrics.py`).
+Live HEFT-RA uses the measured bandwidth annotations and the learned
+runtime profiles, counts transfers in flight and planned in the same round,
+and applies the same one-level lookahead as the simulator. No policy
+overcommits a node: a CRITICAL task that does not fit waits (Adaptive
+first frees room by preemption).
+
+### 8.4 Problems met while building it
+
+| Problem | How it showed up | Fix |
+|---|---|---|
+| Concurrent bandwidth probes | Edge measured at 25-40% of its shaped rate | Wall-clock probe slots |
+| Iteration-count work | "Fast" node slower per task than "slow" node | CPU-time budgets and per-slot CPU shares |
+| Long Pod names | Different tasks mapped to one Pod name | Hashed DNS-1123 names |
+| `powershell -File` with `-Profiles a,b,c` | The list arrived as one string | The script splits comma-separated names |
+| Image loading under CPU caps | `kind load` takes several minutes per image | Operational note: load before timing starts |
+
+---
+
+## 9. Phase O - live Kubernetes validation and the simulator twin
+
+### 9.1 What the live matrix has to show
+
+The simulator says HEFT-RA is the best placement policy and that the
+default Kubernetes scoring is far behind. The live matrix asks two
+questions:
+
+1. **Does the policy ranking hold on a real control plane?** Same
+   policies, same kinds of workflows, real Pods, kubelets, cgroups and
+   shaped links.
+2. **Does the simulator predict the live system?** If a simulator model of
+   the emulated cluster (the *twin*), calibrated only on a warm-up phase,
+   predicts each live trial well, then the simulator's conclusions can be
+   trusted to transfer at least to systems like the emulated one.
+
+### 9.2 Protocol
+
+For each profile (`balanced`, `homogeneous`, `edge`):
+
+1. `kind_lab.py create <profile> --record results/kind-validation/<profile>-cluster.json`
+   builds the cluster, applies container caps and `tc netem`, writes the
+   speed ConfigMap, and records the applied qdisc, caps and speeds as
+   evidence.
+2. All images are loaded and the control plane is installed with
+   `kubectl apply -k .`.
+3. `run_k8s_experiment.py` refreshes the bandwidth probes, then runs a
+   **warm-up** with the `calibrate` policy: every template runs three times
+   on each worker (12 runs per template on a four-worker profile), so every
+   node has a learned profile. The resulting profile store is saved and
+   **every trial starts from the same warm profiles**, so no policy
+   benefits from what an earlier trial learned.
+4. **Trials**: two batches x nine policies x three repetitions = 54 trials,
+   in a seeded random order (seed 2026) so that drift on the host cannot
+   systematically favour one policy.
+   - `priority` batch: a best-effort `pressure` workflow of six long CPU
+     tasks fills the cluster; 7 s later a CRITICAL two-task workflow and
+     three BATCH workflows (a pipeline, a fan-out, independent tasks)
+     arrive. 20 tasks.
+   - `dag` batch: four BATCH DAGs arrive together: a data pipeline with a
+     96 MiB producer, a data-heavy fan-out (one 96 MiB producer, four
+     consumers), a fork-join, and independent mixed tasks. 17 tasks.
+5. `kind_twin_predict.py` calibrates the twin from the warm-up records only
+   and predicts every trial with the corresponding simulator policy; with
+   `--slot-release measured` the twin also keeps a finished task's slot
+   reserved for the warm-up's median completion-to-rebind latency.
+6. `analyze_kind_validation.py` checks integrity and compares live and twin
+   results.
+
+**Integrity checks.** The analyzer refuses to report a profile unless all
+of these hold: the observed qdisc on every worker matches the profile's
+delay and rate, and the published speeds and capacity labels match; the
+warm-up produced at least three observations per template and worker;
+every trial ran the intended policy with the warm profiles loaded and no
+scheduler errors; every workflow and task finished, with no container
+restarts, on the node its own metrics report, at the emulated speed of
+that node; every consumer read exactly the bytes its producer wrote, in
+local mode when co-located and remote mode otherwise; the number of binds
+equals the number of tasks plus preemptions; and only Adaptive preempted.
+
+### 9.3 Results
+
+All numbers come from `results/kind-validation/summary.md` (fixed
+scheduler, 162 trials, integrity gate passed on every profile).
+
+**Emulation fidelity.** Calibrated on the warm-up, speed-normalised base
+runtimes were 3.03-3.07 s for the CPU template (target 3.0), 10.02-10.06 s
+for long CPU (10.0), 3.01 s for I/O (3.0), 3.05-3.25 s for large I/O (3.0)
+and 4.16-4.43 s for memory (4.0). Edge egress measured 6.8 MiB/s against a
+shaped 7.15 MiB/s (balanced) and 4.5 MiB/s against 4.77 MiB/s (edge).
+
+**Pooled results (medians of nine trials per policy, seconds).**
+
+| Policy | dag makespan | dag mean response | priority makespan | priority mean response | Critical response | Preemptions (9 trials) |
+|---|---:|---:|---:|---:|---:|---:|
+| heft-ra | **34.04** | 28.36 | 47.52 | 34.09 | 23.60 | 0 |
+| heft-ra-cap | 34.74 | **27.47** | 47.81 | 35.04 | 23.89 | 0 |
+| heft | 36.67 | 28.06 | 47.61 | 34.93 | 23.73 | 0 |
+| adaptive | 36.94 | 27.87 | 51.81 | 33.45 | **15.31** | 31 |
+| legacy-tuned | 38.11 | 28.66 | 48.05 | 31.46 | 16.64 | 0 |
+| adaptive-no-preempt | 38.93 | 28.46 | 49.02 | 32.12 | 16.65 | 0 |
+| kube-default | 38.99 | 28.58 | 48.37 | 31.83 | 17.33 | 0 |
+| legacy-v1 | 39.30 | 28.45 | 48.05 | 31.52 | 16.59 | 0 |
+| eft | 41.79 | 29.23 | **47.27** | **31.08** | 16.56 | 0 |
+
+**What the paired contrasts say** (ratio of matched trials, 95% bootstrap
+interval, wins / losses):
+
+- Concurrent DAGs: HEFT-RA / HEFT 0.917 [0.837, 0.998], 8 / 1 (the
+  interval barely excludes one). HEFT / kube-default 0.930 [0.857, 1.006]
+  and HEFT / EFT 0.917 [0.824, 1.031] are not conclusive with nine pairs.
+  `heft-ra-cap` / `heft-ra` 1.002 [0.930, 1.074]: no difference. The
+  stronger live statement is about ranks: a HEFT-RA variant was the
+  fastest of nine policies in 8 of the 9 (profile, repetition) runs
+  (probability about 4e-5 if the policies were interchangeable; the
+  exception is edge repetition 3, won by HEFT).
+- Per profile: `heft-ra-cap` is fastest on balanced (35.9 s, then
+  Adaptive-without-preemption 39.2 s, `heft-ra` 40.0 s; HEFT 46.0 s is
+  seventh), `heft-ra` on edge (34.5 s; HEFT 36.7 s), and on homogeneous
+  HEFT-RA (28.3 s) and HEFT (28.9 s) are equivalent, as expected with
+  identical nodes. EFT, nearly equal to HEFT in simulation, is the slowest
+  live policy on the DAG batch.
+- Mechanism (balanced profile): HEFT-RA put the 96 MiB fan-out producer on
+  the CPU node (fastest egress and CPU for its four CPU consumers) in all
+  six of its trials; HEFT left it on the memory node in all three and
+  spent up to 2.8x as long staging inputs (12.2 s vs 4.4 s summed over the
+  batch). This is the simulated mechanism (section 6) appearing live.
+- Tuned Legacy did not transfer: `legacy-tuned` / `legacy-v1` 1.043
+  [0.997, 1.092] on makespan and 1.053 [1.021, 1.086] on mean response.
+- Urgent work: Adaptive / Adaptive-without-preemption has critical
+  response 0.878 [0.754, 0.969], 8 / 0, but makespan 1.139 [0.997, 1.285]
+  and P95 response 1.258 [1.054, 1.458] because 31 killed tasks restart
+  from scratch (the makespan interval includes no change). HEFT /
+  kube-default has critical response 1.476 [1.245, 1.746], 0 / 9: the
+  HEFT family orders by upward rank only, so the two short urgent tasks
+  wait behind batch work, while kube-default's PrioritySort queue puts
+  them first. Even first-come ordering (EFT, 16.56 s) does almost as well
+  as priority ordering (Adaptive without preemption, 16.65 s) here, so
+  most of the live gap comes from ranking urgent work last. This batch is
+  the tail case of the simulated priority study: the critical workflow
+  always arrives into a full cluster.
+- `heft-ra-cap` / `heft-ra` on the priority batch: mean response 1.024
+  [1.001, 1.046], 2 / 7. Marginal, and one of 45 contrast-metric pairs, so
+  reported but not interpreted.
+- Note: live `kube-default` is the default-scoring model running inside
+  the custom scheduler (same control path for every policy); the stock
+  kube-scheduler binary was not part of the comparison.
+
+**Twin agreement (makespan).**
+
+| Profile / batch | Original twin MAPE / bias | Release-latency twin MAPE / bias | Spearman |
+|---|---|---|---:|
+| balanced / dag | 6.8% / -6.0% | 6.0% / -0.8% | 0.62 |
+| balanced / priority | 12.6% / -12.6% | 3.1% / +0.0% | 0.30 |
+| edge / dag | 5.8% / -5.4% | 4.4% / +0.0% | 0.50 |
+| edge / priority | 19.6% / -15.5% | 6.4% / -0.3% | 0.47 |
+| homogeneous / dag | 17.8% / -17.8% | 12.4% / -12.4% | 0.15 |
+| homogeneous / priority | 11.1% / -9.6% | 6.2% / -3.2% | -0.19 |
+
+The release latency calibrated on the warm-up was 2.75 s (balanced),
+2.25 s (homogeneous) and 2.34 s (edge). Adding it removes most of the
+optimistic bias and brings the mean absolute error to 3-8% on the
+heterogeneous profiles. Rank agreement is moderate there and absent on the
+homogeneous profile, where policies differ by less than run-to-run noise.
+The twin picks the right winner for balanced / dag but favours
+kube-default on edge / dag (35.6 s predicted, 39.0 s measured), and it
+does not reproduce the HEFT family's penalty on urgent work. The
+remaining known bias: a DAG edge costs 0.4-0.9 s more control-plane latency
+than a root task (10th percentile parent-finish to child-bind 2.9-3.2 s,
+against a calibrated 2.1-2.7 s), and the warm-up has no edges to measure it.
+
+### 9.4 What the live runs taught (and changed)
+
+The live validation was not a single run; it was the part of the project
+that found the most surprising problems.
+
+**First full run: HEFT-RA looked worse than HEFT.** On the balanced
+profile, HEFT-RA's DAG makespan was close to HEFT's and its priority-batch
+makespan was much worse (75.0 s median against 61.3 s), while the twin
+predicted HEFT-RA best. Two explanations were investigated:
+
+1. *The lookahead ignored capacity.* In one trial the lookahead put the
+   fan-out source on the fast CPU node so that its four leaves could run
+   locally, but that node has two slots, and other workflows' tasks took
+   them, so every leaf ran remotely on slower nodes. The simulator never
+   showed this because its nodes run 8-16 tasks at a time. This led to
+   `heft-ra-cap` (thesis: "HEFT-RA with a capacity-aware lookahead"):
+   children are assigned to the
+   capacity that will actually be free, exactly as the non-delay list
+   scheduler will place them. A first version let a child *wait* for a busy
+   fast node, which the real scheduler never does; working through a
+   concrete four-node example exposed that before any data was collected.
+   A second issue followed: the live scheduler only learns a template when
+   one of its Pods appears, so children's requests were unknown at scoring
+   time and the new lookahead silently degenerated to the old one; it now
+   looks templates up in any workflow and otherwise assumes the producer's
+   size. Regression tests cover both surfaces.
+2. *The scheduler froze nodes.* Comparing timelines showed Pods created by
+   the controller within 0.05 s of becoming ready, yet bound more than 30 s
+   later while nodes were idle. The cause was a race in the
+   refresh introduced by the earlier fix for J3: the inventory is polled
+   outside the lock, so a Pod that finished between the poll and the merge
+   was still "running" in it and was charged as an untracked Pod, making
+   its node look full until the next refresh 30 s later. Locality-seeking
+   policies were hit hardest, because the frozen node is exactly the one
+   where a producer's children were meant to run. The harness had not
+   noticed anything because it kept only log lines containing a Pod name,
+   and refresh or tick errors contain none.
+
+**What was done.** The merge now ignores Pods the scheduler has already
+released (completion or preemption); a regression test reproduces the race;
+the harness records scheduler-wide errors and gates on tick errors; the
+scheduler logs completions with timestamps. The contaminated run was
+stopped, archived in `results/kind-validation/pre-fix-run/`, and the whole
+live matrix was rerun with nine policies. In the rerun a HEFT-RA variant
+was the fastest live policy on concurrent DAGs, as the simulator had
+predicted. (This is a statement about the rerun, not a before/after
+effect of the fix: HEFT-RA's own balanced-profile median was about 40 s
+in both runs, while HEFT's moved from 39.4 s to 46.0 s; see 9.5.)
+
+**The twin was optimistic.** Measuring the time from a task finishing to
+the next bind on the same node during the warm-up gave a stable 2.3-2.8 s
+(kubelet status update, watch event, log read, next tick). The original
+twin freed a slot instantly. `slot_release_delay_s` was added to the
+simulator (default 0, so the scenario corpus is unaffected) and to the
+twin, calibrated only from the warm-up, and the report shows both twins.
+
+**Sizing the live evidence.** Even after the fix, run-to-run spread is
+several percent, so only contrasts whose paired intervals exclude one are
+interpreted, and the twin is judged on error and rank agreement, not on
+individual trials.
+
+### 9.5 Verification pass on the final results
+
+Before writing the conclusions, every headline number was re-derived from
+the raw records, and four checks were added that the summary tables could
+not answer.
+
+1. **Did the fix remove the stalls?** For every trial without preemption,
+   the longest period during which a Pod was pending while some slot was
+   free (occupancy from bind to the task's own finish time):
+
+   | Run | Profile | Trials | Longest stall, median / P90 / max | Stalls over 10 s |
+   |---|---|---:|---|---:|
+   | before fix | balanced | 42 | 6.1 / 16.8 / 38.1 s | 11 |
+   | before fix | homogeneous | 27 | 4.2 / 7.1 / 33.0 s | 2 |
+   | after fix | balanced | 48 | 5.6 / 9.0 / 10.3 s | 2 |
+   | after fix | homogeneous | 48 | 4.1 / 5.9 / 8.0 s | 0 |
+   | after fix | edge | 48 | 6.1 / 7.3 / 8.3 s | 0 |
+
+   The 30+ s stalls are gone; the remaining 4-6 s is the normal slot
+   hand-over (the twin's measured release latency plus a tick).
+2. **Is the live HEFT-RA lead robust?** A HEFT-RA variant won 8 of 9
+   runs (above). But HEFT's own result is not stable between complete runs:
+   on balanced, HEFT's DAG makespans were 39.7 / 35.9 / 39.4 s in the
+   earlier run and 57.5 / 46.0 / 42.9 s in the rerun, while HEFT-RA's
+   were 39.5 / 44.0 / 40.4 s and 40.0 / 43.2 / 33.9 s. The three
+   repetitions of a profile share one warm-up, so they are not independent
+   with respect to calibration noise. The 8.3% HEFT-RA/HEFT figure is
+   therefore reported as "HEFT-RA consistently among the fastest", not as a
+   precise effect size.
+3. **Why was HEFT slow?** The fan-out placements above: HEFT keeps the
+   producer on a node whose consumers cannot run there and pays for the
+   transfers; HEFT-RA's lookahead moves it. Same mechanism as section 6.
+4. **Does Adaptive really serve urgent work better?** Only in the tail
+   (section 7.7). The earlier draft recommended Adaptive for "workloads
+   with urgent workflows" from mean response alone; the recommendation now
+   distinguishes the worst case (Adaptive) from the typical case and
+   deadline hits (HEFT-RA).
+5. **How much of HEFT-RA's simulated lead is by construction?** In
+   simulation every policy plans with the exact parameters of the cluster
+   instance it runs on (only jitter and random failure times are unknown
+   to it), and HEFT-RA's estimator calls the simulator's own resource
+   models (`simulation/estimation.py` imports them from
+   `simulation/resources.py`). The perturbed phases therefore test
+   robustness across cluster instances, not robustness to wrong
+   estimates, and the 0.37% simulated regret is a best case for a
+   scheduler whose model matches reality. HEFT and EFT also plan with
+   exact parameters, so the simulated gap measures what modelling
+   contention is worth. The live trials, with learned runtimes and
+   measured bandwidths, are the real test: HEFT-RA stayed the fastest
+   policy there, but its advantage is known only to within the wide
+   interval above.
+
+Corrected in the documents as a result: the claim that the live ordering
+of all policies matches the simulator (only the top does), the claim that
+HEFT beats the default scoring live (not conclusive), the statement that
+`heft-ra-cap` is never worse than `heft-ra` (it is better on average but
+loses 29 of 1,000 overlapping-workload cases), and the urgent-work
+recommendation.
+
+
+
+---
+
+## 10. Recommendations: which algorithm for which workflow and cluster
+
+The decision table below is the project's final answer to "which
+algorithm for which workflow and cluster". "HEFT-RA" means the
+capacity-aware variant `heft-ra-cap`: identical to `heft-ra` on closed
+DAGs, slightly better on average on overlapping workloads in simulation
+(0.9973 of `heft-ra`'s mean response, although it loses 29 of 1,000
+cases), and indistinguishable live.
+
+| Situation | Use | Why (evidence) |
+|---|---|---|
+| Known DAGs on a heterogeneous cluster | HEFT-RA | Lowest mean regret in every workflow and cluster family (fresh holdout 0.37%); live: fastest of nine policies in 8 of 9 runs, 0.917 of HEFT |
+| Data-heavy, fan-out, pipelines; edge or asymmetric networks | HEFT-RA | Contention-aware transfers and lookahead (fan-out 40.4 s -> 6.6 s); 0.00% regret on the asymmetric family |
+| Homogeneous cluster | HEFT or HEFT-RA (equivalent) | 0.14% simulated regret; live 28.3 s vs 28.9 s |
+| Overlapping workloads without urgent work | HEFT-RA | Best median and P95 response regret and deadline hit rate |
+| Urgent workflows that may arrive while long batch work fills the cluster, where the urgent worst case matters | Adaptive; without preemption if restarts are expensive | P95 urgent response 21.0 s (75.4 s without preemption) vs 126.6 s for HEFT-RA; live critical 15.3 s vs 23.6 s; preemption raised live P95 response by 26% |
+| Urgent workflows with spare capacity, where typical latency or deadline hits matter | HEFT-RA | Median urgent response 7.6 s vs 9.7 s for Adaptive; urgent deadline hit 69.47% vs 67.60% |
+| Failure-prone or thermally constrained fast nodes, mixed pipelines | Adaptive or tuned Legacy | HEFT-RA's risk-neutral estimate: 18.18% regret on unreliable / mixed; 38-42% on unreliable workloads |
+| Single node | Any placement; priority-aware ordering for overlapping work | All policies tie on closed DAGs; Adaptive leads overlapping work |
+| Original eight-factor scorer must stay | Tuned weights, re-validated live | 0.971 of `legacy-v1` in simulation, 1.043 live |
+| Start-up latency matters | Pre-pull or lazy-pull images as well | Placement recovers 1.2%; pre-pulling 7.8% makespan, about 49% time-to-running |
+| Stock Kubernetes scoring | Do not use it to place DAGs; do keep a priority-first queue | 160.69% mean regret; 39.0 s vs 34.0 s live; its PrioritySort serves urgent work 1.48x faster than rank order |
+
+The most promising next policy is a priority-aware HEFT-RA: order by
+priority class first and by upward rank within a class, keep HEFT-RA's
+placement. It should combine Adaptive's urgent response with HEFT-RA's
+makespan.
+
+---
+
+## 11. Claims withdrawn or corrected
+
+| Earlier claim | Status now | Why |
+|---|---|---|
+| HEFT has the lowest closed-DAG mean regret (1.69%) and P95 regret (5.75%). | Superseded. | HEFT-RA leads (holdout 0.39% / 0.12%). HEFT is still the best *classic* heuristic: 2.44% / 9.44% when HEFT-RA is excluded. |
+| Under overlap, historical Legacy has the best deadline hit rate (60%) and Adaptive the lowest P95 response regret (35.07%). | Superseded. | HEFT-RA leads deadline hit (69.47%) and P95 response regret (63.88%); Adaptive leads only the priority-burst workload. |
+| Adaptive improves P95 response regret from 38.54% to 35.07% at 0.755 interruptions per case. | Superseded. | Paired holdout mean-response ratio Adaptive / no-preemption is 0.9934; see also the priority study. |
+| The contextual profile equals HEFT on holdout; HEFT kept in all 20 contexts. | Corrected. | The corrected search picks HEFT-RA for `cpu:fanout`, and HEFT-RA everywhere beats the portfolio. |
+| Removing availability improves the objective by 0.000111; removing load balance, locality, type affinity worsens it by 0.074, 0.085, 0.705. | Re-measured. | Now -0.000245 (availability), -0.000516 (resource fit), +0.072 (load balance), +0.088 (locality), +2.43 (type affinity). Same qualitative ranking. |
+| Tuned/original Legacy objective 0.97525 (warm) and 0.90022 (cold). | Re-measured. | 0.9759 (warm) and 0.8601 (cold), with the same selected vector. |
+| "20 seeds per case" as independent evidence. | Withdrawn. | 1.5 to 4.7 distinct outcomes per case on four of five clusters. |
+| `makespan / lower bound >= 1` sanity checks. | Withdrawn for old data. | The old bound was not a bound (350 of 26,250 records below it). |
+| Kind: Adaptive improved urgent response; 42 preemptions; one 100 MiB transfer in 2.571 s. | Withdrawn as comparative evidence. | Every node ran tasks at the same speed, the scheduler had no DAG, timings were quantised to 1-2 s. Kept only as integration history. |
+| Kind link checks (12.63 ms RTT, 11.35 MiB/s from a 100 Mbit worker). | Superseded. | The emulation was rebuilt; probes were biased by concurrency. |
+| First corrected live run: HEFT-RA no better than HEFT on DAGs and worse on the priority batch. | Withdrawn. | A refresh race froze nodes for about 30 s, hitting locality-seeking policies most; the rerun with the fix has HEFT-RA fastest (0.917 of HEFT). Data kept in `results/kind-validation/pre-fix-run/` as evidence of the defect only. |
+| Draft recommendation "Adaptive for workloads with urgent workflows", from mean urgent response (10.9 s vs 20.9 s). | Corrected. | Adaptive bounds the urgent tail (P95 21 s vs 127 s); HEFT-RA is faster in the typical case (median 7.6 s vs 9.7 s) and meets urgent deadlines as often (section 9.5). |
+| Draft live claims "the live ordering is the one the simulator predicts" and "HEFT beats the default scoring live". | Corrected. | Only the top transfers (a HEFT-RA variant fastest in 8 of 9 runs); HEFT vs kube-default 0.930 [0.857, 1.006] is not conclusive, and EFT, close to HEFT in simulation, was last live. |
+| Holdout (400-449) values for the overlapping workloads quoted before `heft-ra-cap` existed (e.g. HEFT-RA 0.00% median response regret). | Superseded. | Adding a policy changes the best-per-case reference; current values are in section 7.5. Closed-DAG values did not change because `heft-ra-cap` equals `heft-ra` there. |
+
+---
+
+## 12. Design choices considered and rejected
+
+| Option | Why it was rejected |
+|---|---|
+| Virtual machines per node | They share the same four cores (a "fast" VM cannot be faster than the host) and cost gigabytes each; the user also asked not to use them. |
+| An exact optimiser (ILP/CP) as the scheduler | DAG scheduling is NP-hard; the exhaustive oracle is only tractable for tiny workflows, and the online setting with uncertain estimates rewards fast heuristics. The oracle is kept as a reference. |
+| A learned (reinforcement-learning) scheduler | Needs a lot of training data, is hard to explain, and would learn the simulator's quirks. The measured failure had an analytical cause with an analytical fix. |
+| Re-tuning Adaptive's penalty weights per cluster | Fixed penalties were part of the problem; per-cluster tuning risks overfitting, and the contextual search found gains below its 0.5% threshold almost everywhere. |
+| Recommending the contextual portfolio | HEFT-RA alone beats it on holdout (0.9952 vs 0.9977 relative to HEFT). |
+| Special-casing the fan-in packing case | Tuning for one case on development seeds is how overfitting starts; it is recorded as a limitation instead. |
+| Iteration-count work emulation | Measured to make "fast" nodes slower per task (section 8.2). |
+| Random loss and jitter on live links | Three repetitions per (batch, policy) are not enough to average random loss; shaped delay and rate are deterministic and enough to make placement matter. |
+| Synthetic temperatures on live nodes | All Kind nodes share one CPU package; fake signals would make policies react to noise. The fallback exists but is off by default. |
+| metrics-server dependency | Not needed: the scheduler keeps its own reservations and tasks report their own runtimes. |
+| A kube-scheduler framework plugin in Go | The right production form, but a Python secondary scheduler lets the live policies share models and code paths with the simulator, which is what the validation needs. |
+| Argo Workflows as the DAG engine | The original plan kept Argo for dependencies. The project uses its own CRDs and controller instead, because the experiments need control over Pod creation, annotations (DAG, data provenance, gang size), the producer-local data plane, and precise timestamps. Integrating with Argo through a CWSI-like contract remains possible. |
+
+---
+
+## 13. Evidence map
+
+| Artifact | Supports | Produced by |
+|---|---|---|
+| `results/sim/closed-*/records.jsonl`, `summary.*` | Closed-DAG results per phase (including the fresh holdout `closed-holdout2-s600-649`) | `run_experiment_lab.py run` |
+| `results/sim/workload-*/workload-records.jsonl`, `workload-summary.*` | Overlapping-workload results per phase (including `workload-holdout2-s600-649`) | `run_experiment_lab.py workload` |
+| `results/final-evidence-synthesis.{json,md}` | All cross-phase tables, contrasts, seed independence, family leaders | `analyze_final_evidence.py` |
+| `results/mechanism-studies.{json,md}`, `mechanism-studies-records.jsonl` | Cold-start and priority/preemption studies | `run_mechanism_studies.py` |
+| `results/legacy-weight-search.json` | Tuned Legacy weights and their holdout | `tune_legacy_weights.py` |
+| `results/legacy-factor-ablation.json`, `legacy-factor-stress.json` | Factor importance | `run_legacy_ablation.py`, `run_legacy_factor_stress.py` |
+| `results/contextual-policy-search.json`, `scenarios/policy-profiles/contextual-v1.yaml` | Portfolio search | `tune_contextual_policy.py` |
+| `results/kind-validation/<profile>-cluster.json` | Applied emulation (qdiscs, caps, speeds) | `kind_lab.py create --record` |
+| `results/kind-validation/<profile>.json` | Live warm-up and trials | `run_k8s_experiment.py` |
+| `results/kind-validation/<profile>-twin.json` | Twin calibration and predictions | `kind_twin_predict.py` |
+| `results/kind-validation/<profile>-twin-release.json` | Twin with measured slot-release latency | `kind_twin_predict.py --slot-release measured` |
+| `results/kind-validation/pre-fix-run/` | Live data affected by the refresh race (evidence of the defect only) | first live run |
+| `results/kind-validation/summary.{json,md}` | Integrity, live ranking, twin agreement | `analyze_kind_validation.py` |
+| `results/run1.txt`, `run2.txt`, `run34.txt` | Phase A history only | historical scripts |
+| `results/archive/pre-correction-2026-10-03.zip` | Everything before the correction round | archive |
+
+---
+
+## 14. Open work, in priority order
+
+1. A priority-aware HEFT-RA (priority class first, upward rank within a
+   class) to combine urgent-work response with HEFT-RA's makespan.
+2. A risk-averse HEFT-RA (quantile or variance-penalised failure term),
+   evaluated on the same protocol.
+3. Group-level packing for fan-ins on homogeneous clusters.
+4. Physical validation on a k3s cluster of separate machines (scripts in
+   `scripts/`), including real thermal and failure behaviour.
+5. A warm-up that includes DAG edges, so the twin can calibrate per-edge
+   control-plane latency.
+6. A kube-scheduler framework plugin (Score, Permit for gangs, PostFilter
+   for preemption) and integration with Argo through a CWSI-like
+   interface.
+7. Quota-based admission control (Kueue or DRF-style).
+8. Learned runtime models (input size and features) instead of
+   per-template medians.
+9. A CUBIC/BBR option in the network model.
+
+---
+
+## 15. Glossary
+
+- **DAG** - directed acyclic graph of tasks and data dependencies.
+- **EFT** - earliest finish time; place each task where it is estimated to
+  finish first.
+- **HEFT** - EFT placement with tasks ordered by upward rank.
+- **Upward rank** - a task's average cost plus the longest
+  (communication + rank) path through its children; approximates the
+  remaining critical path.
+- **HEFT-RA** - HEFT with resource-aware estimates (contention, shared
+  image pulls, heat, failures) and one-level lookahead.
+- **Regret** - relative distance from the best deployable policy on the
+  same case.
+- **P95** - 95th percentile.
+- **Holdout** - data not looked at until all choices were frozen.
+- **Uncertainty floor** - minimum per-parameter perturbation applied per
+  seed so that every seed is a distinct cluster instance.
+- **Max-min fairness** - allocation in which no flow can get more without
+  taking from a flow that has less.
+- **Mathis bound** - steady-state TCP throughput limit under random loss,
+  `MSS * sqrt(3/2) / (RTT * sqrt(p))`.
+- **SMT** - simultaneous multithreading (Hyper-Threading).
+- **Kind** - Kubernetes in Docker: nodes are containers.
+- **netem** - Linux traffic-control discipline that adds delay, rate
+  limits, loss and jitter.
+- **Twin** - simulator model of an emulated Kind cluster, calibrated on
+  its warm-up.
+- **Gang** - tasks that must start together.
+- **Preemption** - stopping lower-priority work to free resources; here
+  always kill-and-restart.

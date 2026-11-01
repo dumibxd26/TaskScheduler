@@ -167,8 +167,10 @@ def run_workflow(v1: client.CoreV1Api, wf_id: str, results: dict):
             "time": round(elapsed, 2),
         })
 
-        if status == "Failed":
-            print(f"  [{wf_id}] FAILED at {task_id} — aborting workflow")
+        if status != "Succeeded":
+            # Failed and Timeout both stop the chain: a child must never start
+            # before its parent has produced its output.
+            print(f"  [{wf_id}] {status.upper()} at {task_id} — aborting workflow")
             break
 
         # Extract outputs for downstream tasks

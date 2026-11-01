@@ -1,105 +1,117 @@
+from collections import Counter
+
 import pytest
 from kubernetes.client.rest import ApiException
 
 from run_k8s_experiment import (
     KubernetesExperiment,
     SUPPORTED_POLICIES,
-    policy_order_for_repetition,
-    summarize_policy,
+    batch_bodies,
+    calibration_bodies,
+    load_batches,
+    parse_scheduler_events,
     task_metrics,
-    workflow_batch,
+    trial_schedule,
+    trial_summary,
 )
 
 
-def test_workflow_batch_has_expected_shapes_and_pressure_ordering():
-    pressure, critical, regular = workflow_batch("adaptive", 1, "run-1")
-    workflows = [pressure, critical] + regular
-    names = [workflow["metadata"]["name"] for workflow in workflows]
+def test_trial_schedule_runs_each_pair_once_per_repetition_reproducibly():
+    first = trial_schedule(["priority", "dag"], list(SUPPORTED_POLICIES), 3, 2026)
+    again = trial_schedule(["priority", "dag"], list(SUPPORTED_POLICIES), 3, 2026)
+    other = trial_schedule(["priority", "dag"], list(SUPPORTED_POLICIES), 3, 7)
 
-    assert len(workflows) == 5
-    assert len(names) == len(set(names))
-    assert max(map(len, names)) <= 63
-    assert sum(len(workflow["spec"]["tasks"]) for workflow in workflows) == 20
+    assert first == again and first != other
+    counts = Counter((batch, policy) for _, batch, policy in first)
+    assert set(counts.values()) == {3}
+    for repetition in (1, 2, 3):
+        pairs = [(b, p) for r, b, p in first if r == repetition]
+        assert len(pairs) == len(set(pairs)) == 2 * len(SUPPORTED_POLICIES)
+
+
+def test_batch_bodies_follow_the_shared_definition(project_root):
+    batches = load_batches(project_root / "experiments" / "k8s" / "batches.yaml")
+
+    priority = batch_bodies(batches, "priority", "run", "t007", "adaptive")
+    dag = batch_bodies(batches, "dag", "run", "t008", "heft")
+
+    assert [arrival for arrival, _ in priority] == [
+        "start", "delayed", "delayed", "delayed", "delayed"]
+    assert {arrival for arrival, _ in dag} == {"start"}
+    for _, body in priority + dag:
+        assert len(body["metadata"]["name"]) <= 63
+        assert body["metadata"]["labels"]["ts.io/experiment-trial"] in {"t007", "t008"}
+    pressure = priority[0][1]
     assert pressure["spec"]["priority"] == "BEST_EFFORT"
-    assert pressure["spec"]["preemptable"] is True
-    assert critical["spec"]["priority"] == "CRITICAL"
-    assert critical["spec"]["preemptable"] is False
+    assert sum(len(body["spec"]["tasks"]) for _, body in priority) == 20
+    assert sum(len(body["spec"]["tasks"]) for _, body in dag) == 17
 
 
-def test_task_metrics_extracts_remote_transfer():
+def test_calibration_requests_three_samples_per_worker_and_template():
+    bodies = calibration_bodies(["experiment-cpu", "experiment-io"], 4, "run")
+
+    assert [len(body["spec"]["tasks"]) for body in bodies] == [12, 12]
+    assert {task["template"] for task in bodies[0]["spec"]["tasks"]} == {"experiment-cpu"}
+
+
+def test_task_metrics_extracts_remote_transfer_and_metrics():
     metrics, mode, source = task_metrics(
-        "[FETCH] http://node:8080/result -> /data/result\n"
-        '__TS_METRICS__={"io_bytes_read": 1024, '
-        '"transfer_seconds": 1.25}\n')
+        "[LOCAL] /data/outputs/a -> /data/inputs/a\n"
+        "[FETCH] http://node/a -> /data/inputs/b\n"
+        '__TS_METRICS__={"runtime_seconds": 1.5}\n')
 
-    assert metrics["io_bytes_read"] == 1024
-    assert metrics["transfer_seconds"] == 1.25
+    assert metrics == {"runtime_seconds": 1.5}
     assert mode == "remote"
     assert source.startswith("[FETCH]")
 
 
-def test_policy_summary_aggregates_response_and_preemptions():
-    trial = {
-        "makespan_seconds": 12.0,
-        "mean_response_seconds": 8.0,
-        "preemptions": 2,
-        "workflows": [{
-            "shape": "critical",
-            "state": "FINISHED",
-            "response_seconds": 8.0,
-            "tasks": [{
-                "node_name": "node-a",
-                "container_runtime_seconds": 3.0,
-                "metrics": {"transfer_seconds": 0.5},
-                "transfer_mode": "remote",
-            }],
-        }],
-    }
+def test_scheduler_events_keep_cluster_clock_timestamps():
+    log = "\n".join([
+        "[BIND] 'ts-exp-t001-pipeline-ingest-1' -> 'ts-node-io' at=100.250",
+        "[BIND] 'ts-exp-t002-other' -> 'ts-node-io' at=101.000",
+        "[PREEMPT] 'ts-exp-t001-pressure-long-1' from ts-node-cpu (kill_restart) at=102.5",
+        "[SCHED] tick error: boom ts-exp-t001-x",
+    ])
 
-    summary = summarize_policy([trial])
+    events = parse_scheduler_events(log, "ts-exp-t001-")
 
-    assert summary["completion_rate"] == 1
-    assert summary["median_critical_response_seconds"] == 8
-    assert summary["preemptions"] == 2
-    assert summary["total_transfer_seconds"] == 0.5
-    assert summary["placements_by_node"] == {"node-a": 1}
+    assert events["binds"] == [{
+        "pod": "ts-exp-t001-pipeline-ingest-1", "node": "ts-node-io", "at": 100.25}]
+    assert events["preemptions"][0]["at"] == 102.5
+    assert len(events["error_lines"]) == 1
 
 
-def test_policy_order_alternates_between_repetitions():
-    policies = ["legacy", "adaptive"]
+def test_scheduler_wide_errors_are_kept_without_a_trial_prefix():
+    log = "\n".join([
+        "[SCHED] tick error: 'NoneType' object is not subscriptable",
+        "[SCHED] cluster refresh failed: timed out",
+        "[BIND] 'ts-exp-t001-a' -> 'ts-node-io' at=1.0",
+        "[DONE] 'ts-exp-t001-a' Succeeded on ts-node-io "
+        "(runtime=3.000s, startup=1.00s) at=5.5",
+    ])
 
-    assert policy_order_for_repetition(policies, 1) == ["legacy", "adaptive"]
-    assert policy_order_for_repetition(policies, 2) == ["adaptive", "legacy"]
-    assert policy_order_for_repetition(policies, 3) == ["legacy", "adaptive"]
-    assert policies == ["legacy", "adaptive"]
+    events = parse_scheduler_events(log, "ts-exp-t001-")
+
+    assert events["completions"] == [{"pod": "ts-exp-t001-a", "at": 5.5}]
+    assert events["error_lines"] == []
+    assert len(events["scheduler_errors"]) == 2
+    assert events["scheduler_errors"][0].startswith("[SCHED] tick error")
 
 
-def test_three_policy_order_is_latin_rotation():
-    policies = ["legacy-v1", "legacy-tuned", "adaptive"]
-    orders = [
-        policy_order_for_repetition(policies, repetition)
-        for repetition in range(1, 4)
+def test_trial_summary_uses_admission_and_latest_task_finish():
+    workflows = [
+        {"response_seconds": 10.0, "completion_epoch": 110.0, "admitted_epoch": 100.0},
+        {"response_seconds": 4.0, "completion_epoch": 111.0, "admitted_epoch": 107.0},
     ]
 
-    assert orders == [
-        ["legacy-v1", "legacy-tuned", "adaptive"],
-        ["legacy-tuned", "adaptive", "legacy-v1"],
-        ["adaptive", "legacy-v1", "legacy-tuned"],
-    ]
-    assert all(
-        {order[position] for order in orders} == set(policies)
-        for position in range(3)
-    )
+    summary = trial_summary(workflows)
+
+    assert summary["makespan_seconds"] == 11.0
+    assert summary["mean_response_seconds"] == 7.0
+    assert summary["p95_response_seconds"] == 10.0
 
 
-def test_experiment_accepts_explicit_legacy_variants():
-    assert "legacy-v1" in SUPPORTED_POLICIES
-    assert "legacy-tuned" in SUPPORTED_POLICIES
-    pressure, critical, regular = workflow_batch("legacy-tuned", 1, "run-1")
-    assert len([pressure, critical, *regular]) == 5
-
-
-def test_cleanup_ignores_only_not_found():
+def test_delete_ignoring_not_found_only_ignores_404():
     def missing():
         raise ApiException(status=404, reason="Not Found")
 
@@ -107,5 +119,5 @@ def test_cleanup_ignores_only_not_found():
         raise ApiException(status=403, reason="Forbidden")
 
     assert KubernetesExperiment.delete_ignoring_not_found(missing) is None
-    with pytest.raises(ApiException, match="Forbidden"):
+    with pytest.raises(ApiException):
         KubernetesExperiment.delete_ignoring_not_found(forbidden)

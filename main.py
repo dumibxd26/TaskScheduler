@@ -101,6 +101,9 @@ if __name__ == "__main__":
             observer.record_task_completion(finished_task, actual_runtime=3.0, actual_startup=0.5,
                                             node_id=finished_task.assigned_node_id,
                                             node_type=node_type)
+            if matched:
+                # Release the reservation made at placement time.
+                matched.unregister_task(finished_task.task_instance_id)
 
             # Mark the image warm on the node that just ran it.
             # In a real cluster this reflects container-runtime cache; in simulation

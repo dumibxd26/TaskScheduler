@@ -43,6 +43,24 @@ def _enum(enum_type, raw: str, field_name: str):
         ) from exc
 
 
+_TRUE_STRINGS = frozenset({"true", "yes", "on", "1"})
+_FALSE_STRINGS = frozenset({"false", "no", "off", "0"})
+
+
+def parse_bool(raw: Any, field_name: str) -> bool:
+    """Parse a YAML boolean without Python's ``bool('false') is True`` trap."""
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        normalized = raw.strip().lower()
+        if normalized in _TRUE_STRINGS:
+            return True
+        if normalized in _FALSE_STRINGS:
+            return False
+    raise ModelValidationError(
+        f"{field_name} must be a boolean, got {raw!r}")
+
+
 @dataclass(frozen=True)
 class CalibrationSpec:
     status: str = "unspecified"
@@ -123,12 +141,24 @@ class CpuSpec:
         )
 
 
+def _optional_positive(data: Mapping[str, Any], key: str, name: str) -> float | None:
+    if data.get(key) is None:
+        return None
+    value = float(data[key])
+    _positive(name, value)
+    return value
+
+
 @dataclass(frozen=True)
 class MemorySpec:
+    """Node DRAM. ``per_task_bandwidth_mib_s`` optionally caps one task's
+    DRAM rate (a single core or cgroup cannot use every channel)."""
+
     capacity_mib: float
     calibrated_bandwidth_mib_s: float
     latency_ns: float
     channels: int = 1
+    per_task_bandwidth_mib_s: float | None = None
 
     def __post_init__(self):
         _positive("memory.capacity_mib", self.capacity_mib)
@@ -136,6 +166,14 @@ class MemorySpec:
         _positive("memory.latency_ns", self.latency_ns)
         if self.channels < 1:
             raise ModelValidationError("memory.channels must be >= 1")
+        if self.per_task_bandwidth_mib_s is not None:
+            _positive("memory.per_task_bandwidth_mib_s", self.per_task_bandwidth_mib_s)
+
+    @property
+    def task_bandwidth_limit_mib_s(self) -> float:
+        if self.per_task_bandwidth_mib_s is None:
+            return self.calibrated_bandwidth_mib_s
+        return min(self.per_task_bandwidth_mib_s, self.calibrated_bandwidth_mib_s)
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "MemorySpec":
@@ -144,16 +182,23 @@ class MemorySpec:
             calibrated_bandwidth_mib_s=float(data["calibrated_bandwidth_mib_s"]),
             latency_ns=float(data.get("latency_ns", 80.0)),
             channels=int(data.get("channels", 1)),
+            per_task_bandwidth_mib_s=_optional_positive(
+                data, "per_task_bandwidth_mib_s", "memory.per_task_bandwidth_mib_s"),
         )
 
 
 @dataclass(frozen=True)
 class StorageSpec:
+    """Node storage. Optional per-task caps model a per-container I/O limit
+    (for example a blkio throttle or a rate-limited emulated device)."""
+
     capacity_mib: float
     sequential_read_mib_s: float
     sequential_write_mib_s: float
     random_read_iops: float
     random_write_iops: float
+    per_task_read_mib_s: float | None = None
+    per_task_write_mib_s: float | None = None
 
     def __post_init__(self):
         for name in (
@@ -161,13 +206,23 @@ class StorageSpec:
             "random_read_iops", "random_write_iops",
         ):
             _positive(f"storage.{name}", getattr(self, name))
+        for name in ("per_task_read_mib_s", "per_task_write_mib_s"):
+            if getattr(self, name) is not None:
+                _positive(f"storage.{name}", getattr(self, name))
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "StorageSpec":
-        return cls(**{name: float(data[name]) for name in (
+        values = {name: float(data[name]) for name in (
             "capacity_mib", "sequential_read_mib_s", "sequential_write_mib_s",
             "random_read_iops", "random_write_iops",
-        )})
+        )}
+        return cls(
+            **values,
+            per_task_read_mib_s=_optional_positive(
+                data, "per_task_read_mib_s", "storage.per_task_read_mib_s"),
+            per_task_write_mib_s=_optional_positive(
+                data, "per_task_write_mib_s", "storage.per_task_write_mib_s"),
+        )
 
 
 @dataclass(frozen=True)
@@ -264,8 +319,24 @@ class NodeSpec:
         )
 
 
+HALF_DUPLEX_MEDIA = frozenset({"wifi"})
+
+
 @dataclass(frozen=True)
 class NetworkLinkSpec:
+    """A routed link between two endpoints.
+
+    ``bandwidth_mib_s`` and ``latency_ms`` describe the endpoint_a -> endpoint_b
+    direction; the optional ``reverse_*`` values describe endpoint_b ->
+    endpoint_a and default to the forward values. Full-duplex media give each
+    direction its own capacity. Half-duplex media (802.11 by default) share one
+    channel between both directions, as CSMA/CA stations do.
+
+    ``packet_loss_rate`` is the TCP-visible loss-event rate after link-layer
+    retransmission. It removes the lost share of link capacity and, through the
+    Mathis et al. ceiling, limits each TCP flow by its round-trip time.
+    """
+
     link_id: str
     endpoint_a: str
     endpoint_b: str
@@ -274,6 +345,9 @@ class NetworkLinkSpec:
     packet_loss_rate: float = 0.0
     jitter_ms: float = 0.0
     medium: str = "ethernet"
+    reverse_bandwidth_mib_s: float | None = None
+    reverse_latency_ms: float | None = None
+    duplex: str | None = None
 
     def __post_init__(self):
         if not self.link_id or not self.endpoint_a or not self.endpoint_b:
@@ -283,7 +357,32 @@ class NetworkLinkSpec:
         _positive("network.bandwidth_mib_s", self.bandwidth_mib_s)
         _non_negative("network.latency_ms", self.latency_ms)
         _fraction("network.packet_loss_rate", self.packet_loss_rate)
+        if self.packet_loss_rate >= 1.0:
+            raise ModelValidationError("network.packet_loss_rate must be < 1")
         _non_negative("network.jitter_ms", self.jitter_ms)
+        if self.reverse_bandwidth_mib_s is not None:
+            _positive("network.reverse_bandwidth_mib_s", self.reverse_bandwidth_mib_s)
+        if self.reverse_latency_ms is not None:
+            _non_negative("network.reverse_latency_ms", self.reverse_latency_ms)
+        if self.duplex is not None and self.duplex not in {"full", "half"}:
+            raise ModelValidationError(
+                f"link '{self.link_id}' duplex must be 'full' or 'half'")
+
+    @property
+    def is_full_duplex(self) -> bool:
+        if self.duplex is not None:
+            return self.duplex == "full"
+        return self.medium.lower() not in HALF_DUPLEX_MEDIA
+
+    def bandwidth_in_direction(self, forward: bool) -> float:
+        if forward or self.reverse_bandwidth_mib_s is None:
+            return self.bandwidth_mib_s
+        return self.reverse_bandwidth_mib_s
+
+    def latency_in_direction_ms(self, forward: bool) -> float:
+        if forward or self.reverse_latency_ms is None:
+            return self.latency_ms
+        return self.reverse_latency_ms
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "NetworkLinkSpec":
@@ -299,6 +398,14 @@ class NetworkLinkSpec:
             packet_loss_rate=float(data.get("packet_loss_rate", 0.0)),
             jitter_ms=float(data.get("jitter_ms", 0.0)),
             medium=str(data.get("medium", "ethernet")),
+            reverse_bandwidth_mib_s=(
+                float(data["reverse_bandwidth_mib_s"])
+                if data.get("reverse_bandwidth_mib_s") is not None else None),
+            reverse_latency_ms=(
+                float(data["reverse_latency_ms"])
+                if data.get("reverse_latency_ms") is not None else None),
+            duplex=(str(data["duplex"]).lower()
+                    if data.get("duplex") is not None else None),
         )
 
 
@@ -313,12 +420,20 @@ class ClusterSpec:
     description: str = ""
     calibration: CalibrationSpec = CalibrationSpec()
     schema_version: int = SCHEMA_VERSION
+    # Orchestration latency between a task becoming eligible (arrival, all
+    # parents finished, or a retry) and its Pod reaching the scheduler queue.
+    control_plane_delay_s: float = 0.0
+    # Latency between a task finishing and its node capacity becoming
+    # placeable again (Kubernetes must first observe the Pod's completion).
+    slot_release_delay_s: float = 0.0
 
     def __post_init__(self):
         if self.schema_version != SCHEMA_VERSION:
             raise ModelValidationError(
                 f"unsupported cluster schema_version {self.schema_version}"
             )
+        _non_negative("cluster.control_plane_delay_s", self.control_plane_delay_s)
+        _non_negative("cluster.slot_release_delay_s", self.slot_release_delay_s)
         if not self.cluster_id or not self.nodes:
             raise ModelValidationError("cluster id and at least one node are required")
         node_ids = [node.node_id for node in self.nodes]
@@ -382,6 +497,8 @@ class ClusterSpec:
             description=str(cluster.get("description", "")),
             calibration=CalibrationSpec.from_mapping(cluster.get("calibration")),
             schema_version=int(data.get("schema_version", SCHEMA_VERSION)),
+            control_plane_delay_s=float(cluster.get("control_plane_delay_s", 0.0)),
+            slot_release_delay_s=float(cluster.get("slot_release_delay_s", 0.0)),
         )
 
 
@@ -465,16 +582,17 @@ class TaskSpec:
             cache_reuse_fraction=float(data.get("cache_reuse_fraction", 0.0)),
             output_mib={str(k): float(v) for k, v in data.get(
                 "output_mib", {}).items()},
-            checkpointable=bool(data.get("checkpointable", False)),
+            checkpointable=parse_bool(
+                data.get("checkpointable", False), "task.checkpointable"),
             checkpoint_size_mib=float(data.get("checkpoint_size_mib", 0.0)),
             checkpoint_interval_s=float(data.get("checkpoint_interval_s", 30.0)),
             gang_group_id=(str(data["gang_group_id"])
                            if data.get("gang_group_id") else None),
             release_s=float(data.get("release_s", 0.0)),
             priority=(_enum(PriorityClass, data["priority"], "task priority")
-                      if data.get("priority") else None),
-            preemptable=(bool(data["preemptable"])
-                         if "preemptable" in data else None),
+                      if data.get("priority") is not None else None),
+            preemptable=(parse_bool(data["preemptable"], "task.preemptable")
+                         if data.get("preemptable") is not None else None),
             workflow_instance_id=(str(data["workflow_instance_id"])
                                   if data.get("workflow_instance_id") else None),
         )
@@ -566,7 +684,8 @@ class WorkflowSpec:
                 "dependencies", ())),
             priority=_enum(
                 PriorityClass, workflow.get("priority", "BATCH"), "priority"),
-            preemptable=bool(workflow.get("preemptable", True)),
+            preemptable=parse_bool(
+                workflow.get("preemptable", True), "workflow.preemptable"),
             deadline_s=(float(workflow["deadline_s"])
                         if workflow.get("deadline_s") is not None else None),
             family=str(workflow.get("family", "custom")),

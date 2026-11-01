@@ -1,61 +1,109 @@
 # TaskScheduler
 
-TaskScheduler is an experiment lab and Kubernetes control plane for scheduling
-directed acyclic graph (DAG) workflows on heterogeneous clusters. It combines a
-deterministic discrete-event simulator with a deployable Workflow controller
-and custom scheduler.
+TaskScheduler is a research platform for scheduling DAG workflows on
+heterogeneous clusters. It has two execution surfaces that share one set of
+scenario descriptions:
 
-> **Evidence status:** exploratory simulation, fresh-seed confirmation,
-> Legacy weight search, factor studies, and a six-trial Legacy/Adaptive Kind
-> pilot are complete. The final three-policy, three-topology same-host Kind
-> matrix also completed and passed strict analysis with 27 trials, 135
-> workflows, and 540 successful final tasks. Physical multi-machine k3s
-> validation is still pending. The
-> simulator and live scheduler are separate implementations over partly shared
-> models; they do not run identical policy code.
+- a deterministic **discrete-event simulator** (`simulation/`) that models
+  CPUs with SMT, caches and DRAM, storage, routed networks with max-min
+  sharing and TCP limits, heating and throttling, energy, failures,
+  checkpoints, gangs, priorities and preemption; and
+- a **Kubernetes control plane** (Workflow and TaskTemplate CRDs, a DAG
+  controller, a custom scheduler, a producer-local data plane, and node
+  telemetry DaemonSets).
+
+A calibrated **simulator twin** of each emulated Kind cluster connects the
+two, so simulated conclusions can be checked against a real control plane.
+
+> **Evidence status (2026-10-03, correction round).** Simulation: exploratory
+> (seeds 0-19), confirmatory (200-249) and untouched holdout (400-449)
+> matrices over 5 clusters x 15 workflows and 4 overlapping workloads, plus
+> targeted cold-start and priority studies and the Legacy/contextual
+> searches. Live: same-host Kind validation of three emulated profiles
+> (`balanced`, `homogeneous`, `edge`) with a calibrated twin. Physical
+> multi-machine (k3s) validation has **not** been run. Everything produced
+> before the correction round is archived in
+> `results/archive/pre-correction-2026-10-03.zip`.
 
 ## Contents
 
-- [Overview](#overview)
+- [Key results](#key-results)
 - [Architecture](#architecture)
 - [Policies](#policies)
-- [Learning and Locality](#learning-and-locality)
+- [Simulator model](#simulator-model)
+- [Learning, locality and cold starts](#learning-locality-and-cold-starts)
 - [Evidence](#evidence)
-- [Project Structure](#project-structure)
+- [Project structure](#project-structure)
 - [Prerequisites](#prerequisites)
-- [Simulation Lab](#simulation-lab)
-- [Kubernetes Deployment](#kubernetes-deployment)
-- [Monitoring & Debugging](#monitoring--debugging)
+- [Simulation lab](#simulation-lab)
+- [Kubernetes deployment](#kubernetes-deployment)
+- [Same-host validation matrix](#same-host-validation-matrix)
+- [Monitoring and debugging](#monitoring-and-debugging)
 - [Testing](#testing)
-- [Cleanup](#cleanup)
+- [Documentation](#documentation)
 
 ---
 
-## Overview
+## Key results
 
-The project answers two related questions:
+Closed DAGs, fresh untouched holdout (3,750 cases, every seed a perturbed
+cluster instance):
 
-1. How do FCFS, Random, EFT, HEFT, three distinct Legacy variants, and
-  Adaptive policies behave across heterogeneous DAG and overlapping-arrival
-  scenarios?
-2. Can the intended lifecycle, learning, locality, telemetry, binding, and
-  kill/restart preemption paths execute through a real Kubernetes API?
+| Policy | Mean regret | P95 regret | Win/tie |
+|---|---:|---:|---:|
+| **heft-ra** / **heft-ra-cap** | **0.37%** | **0.00%** | **95.39%** |
+| heft | 12.42% | 49.02% | 80.05% |
+| eft | 12.54% | 49.02% | 79.65% |
+| adaptive | 13.21% | 57.83% | 71.95% |
+| legacy-tuned | 18.34% | 73.00% | 56.64% |
+| legacy-v1 | 27.80% | 173.88% | 52.91% |
+| k8s-default | 160.69% | 1296.03% | 42.32% |
 
-The simulator provides controlled policy comparison. The live system provides
-end-to-end integration evidence and descriptive same-host timing. Kind worker
-containers share one physical machine, so the live results are not evidence of
-independent network, thermal, or failure domains.
+In simulation every scheduler plans with the exact parameters of the
+cluster instance it runs on, and HEFT-RA's estimator uses the simulator's
+own resource models, so these regrets are best-case figures; the live
+trials below test the policies with learned estimates.
 
-The current evidence supports policy selection by objective:
+Overlapping workloads, fresh holdout (1,000 cases): `heft-ra-cap` has the
+lowest median (0.00%) and P95 (63.76%) response regret and the highest
+deadline hit rate (71.47%). For the urgent workflow alone the two families
+win in different places: HEFT-RA is faster in the typical case (median
+7.6 s against 9.7 s) and meets the urgent deadline as often, while Adaptive
+(priority ordering plus preemption) bounds the worst case (P95 21.0 s
+against 126.6 s).
 
-| Objective | Current recommendation |
+Live Kind validation (3 emulated profiles, 9 policies, 162 trials, all
+integrity checks passed): on four concurrent DAGs a HEFT-RA variant was
+the fastest of the nine policies in 8 of 9 runs (makespan 0.917 of
+HEFT's), because it keeps data-heavy producers where their consumers run;
+the ordering of the other policies is not conclusive with nine trials. On
+the priority batch, where the critical workflow arrives into a full
+cluster, Adaptive serves it 12% faster than without preemption, while the
+HEFT family, which ignores priority classes, is 1.48 times slower than
+`kube-default` for it. The refresh fix removed the 30+ s idle stalls of the
+first live run (longest stall after the fix: 10.3 s).
+A calibrated simulator twin that models the measured slot-release latency
+(2.3-2.8 s) matches live times within 3-8% on the heterogeneous profiles.
+
+**Recommendation per workflow and cluster type**
+
+| Situation | Use |
 |---|---|
-| Static, known DAG | HEFT; EFT is a close simpler baseline |
-| Energy-sensitive overlap | EFT or HEFT |
-| Deadline hit rate in the simulator model | Historical simulator Legacy |
-| Exact live Legacy or batch completion required | Tuned Legacy rather than Legacy v1 |
-| Median regular-workflow response | Adaptive, when restart cost is acceptable |
-| Restart cost dominates | Adaptive no-preempt in simulation; live validation remains future work |
+| Known DAGs on heterogeneous clusters, no urgent work | `heft-ra-cap` (HEFT-RA) |
+| Data-heavy, fan-out, pipeline workflows; edge or uneven networks | `heft-ra-cap` |
+| Homogeneous clusters | `heft` or `heft-ra-cap` (equivalent) |
+| Overlapping workloads without urgent work | `heft-ra-cap` |
+| Urgent workflows that may arrive into a cluster full of long batch work, worst case matters | `adaptive` (`adaptive-no-preempt` if restarts are expensive) |
+| Urgent workflows with spare capacity, typical latency or deadline hits matter | `heft-ra-cap` |
+| Failure-prone or hot fast nodes, mixed pipelines | `adaptive` or `legacy-tuned` (risk-averse) |
+| Original eight-factor scorer required | `legacy-tuned`, re-validated live |
+| Start-up latency matters | add image pre-pulling or lazy pulling |
+| Stock Kubernetes scoring | avoid for DAG placement; keep a priority-first queue |
+
+The full tables are in `results/final-evidence-synthesis.md`,
+`results/mechanism-studies.md` and `results/kind-validation/summary.md`; the
+reasoning behind every number is in `ENGINEERING_JOURNAL.md` and
+`thesis/thesis.pdf`.
 
 ---
 
@@ -64,381 +112,329 @@ The current evidence supports policy selection by objective:
 ```mermaid
 flowchart TB
   subgraph Simulation
-    Scenarios[Cluster, workflow, and workload YAML]
+    Scenarios[Cluster, workflow and workload YAML]
     Lab[run_experiment_lab.py]
     Engine[Discrete-event engine]
-    SimPolicies[Nine simulator policies]
-    Scenarios --> Lab --> Engine --> SimPolicies
+    Policies[11 policies + static oracle]
+    Scenarios --> Lab --> Engine --> Policies
   end
 
   subgraph Kubernetes
     CRDs[Workflow and TaskTemplate CRDs]
-    Controller[ts-controller: DAG lifecycle]
-    Scheduler[ts-scheduler: placement and learning]
+    Controller[ts-controller: DAG lifecycle, Pods, status]
+    Scheduler[ts-scheduler: ordering, placement, binding, preemption]
     Pods[Task Pods]
-    Agents[Fileserver, bandwidth, thermal DaemonSets]
+    Agents[Fileserver, bandwidth probe, thermal DaemonSets]
     CRDs --> Controller --> Pods
     Pods --> Scheduler
     Scheduler -->|bind / delete victims| Pods
-    Agents -->|data and Node annotations| Scheduler
+    Agents -->|data, node annotations| Scheduler
+  end
+
+  subgraph Validation
+    Lab2[kind_lab.py: emulated profiles]
+    Harness[run_k8s_experiment.py]
+    Twin[kind_twin_predict.py: calibrated twin]
+    Report[analyze_kind_validation.py]
+    Lab2 --> Harness --> Twin --> Report
   end
 ```
 
-The controller creates a Pod only after its dependencies finish. The live
-scheduler watches Pending Pods with `schedulerName: ts-scheduler`, invokes the
-selected policy, applies victim deletions, and binds placements. The controller
-then records outputs, retries interrupted tasks, and recursively terminates
-descendants blocked by failed parents.
-
-The controller knows the complete Workflow DAG. The current scheduler adapter
-receives only the ready-Pod frontier and reconstructs no future edges, so the
-live experiment does **not** validate full HEFT upward-rank ordering.
+The controller creates a Pod only when the task's parents have succeeded and
+annotates it with the workflow DAG, priority, gang size, logical requests and
+the producer node and size of each input. The scheduler watches Pending Pods
+with `schedulerName: ts-scheduler`, computes upward ranks from the published
+DAG, runs the selected policy every tick (1 s), binds through the API (with
+rollback when a bind fails), and deletes preemption victims. Outputs stay on
+the producing node (`/var/lib/ts-data`) and children fetch them from that
+node's fileserver, so data locality has a real cost.
 
 ---
 
 ## Policies
 
-### Simulator
+| Name | Ordering and placement | Simulator | Live |
+|---|---|:---:|:---:|
+| `fcfs` | First ready task to the first node that fits | yes | |
+| `random` | Seeded random feasible node | yes | |
+| `k8s-default` / `kube-default` | PrioritySort queue; LeastAllocated + BalancedAllocation + ImageLocality scores | yes | yes |
+| `eft` | Readiness order; earliest estimated finish time | yes | yes |
+| `heft` | Upward-rank order; EFT placement | yes | yes |
+| `heft-ra` | HEFT order; contention-, image-, thermal- and failure-aware finish estimates; one-level lookahead | yes | yes |
+| `heft-ra-cap` | `heft-ra` whose lookahead places children only into capacity that will actually be free | yes | yes |
+| `legacy` | Historical simulator heuristic (continuity only) | yes | |
+| `legacy-v1` | Exact eight-factor live scorer, original weights | yes | yes |
+| `legacy-tuned` | Same scorer, searched weights | yes | yes |
+| `adaptive` | Priority, then rank order; EFT plus energy/transfer/thermal/failure penalties; preemption | yes | yes |
+| `adaptive-no-preempt` | `adaptive` without preemption | yes | yes |
+| `oracle-static` | Exhaustive static assignment for small DAGs (reference, never a competitor) | yes | |
+| `calibrate` | Round-robin warm-up used by the live harness | | yes |
 
-| Policy | Ordering and placement |
-|---|---|
-| FCFS | Ready-list order and first feasible placement |
-| Random | Seeded random feasible placement |
-| EFT | Greedy minimum estimated finish time |
-| HEFT | Full-DAG upward rank, then EFT placement |
-| Legacy | Historical simulator heuristic: EFT plus specialization and fragmentation terms |
-| Legacy v1 | Exact live eight-factor scorer with the original weights |
-| Legacy tuned | Exact live scorer with train/validation/holdout-selected weights |
-| Adaptive | Priority + HEFT order; finish, energy, transfer, thermal, and failure score; priority preemption |
-| Adaptive no-preempt | Exact Adaptive score and order with preemption disabled |
-
-The simulator models shared CPU, cache, memory bandwidth, storage, routed
-network capacity, thermal throttling, power, failures/repair, checkpoints,
-gangs, releases, and functional priority preemption.
-
-### Kubernetes
-
-`TS_POLICY=legacy` is a backward-compatible alias for `legacy-v1`; the static
-Kustomize deployment currently selects `adaptive`. Both Legacy names use the
-original exact eight-factor score: type affinity,
-resource fit, warm image, load, availability, failure history, parent locality,
-and memory pressure. `TS_POLICY=legacy-tuned` changes only those eight weights;
-coverage, random exploration, profile learning, and tie-breaking are unchanged.
-
-`TS_POLICY=adaptive` orders the ready frontier by priority, virtual runtime,
-arrival, and stored rank. It minimizes occupancy-aware expected finish time,
-an optimistic UCB adjustment, observed failure cost, and a thermal-headroom
-penalty. It supports atomic gang rollback and bounded kill/restart preemption.
+Live HEFT-RA uses measured bandwidth annotations and learned runtime
+profiles; the live validation clusters report no temperatures or failures, so
+its thermal and failure terms are exercised only in simulation.
 
 ---
 
-## Learning and Locality
+## Simulator model
 
-Successful live Pods update per-task-template, per-node startup and runtime
-profiles. Profiles are persisted to a file and ConfigMap and survive scheduler
-Pod replacement.
+- **Execution** is the roofline-style maximum of compute, DRAM, storage-read
+  and storage-write times. CPU rates follow Amdahl's law, the thermal throttle
+  factor and an SMT-aware node ceiling; cache-resident traffic does not reach
+  DRAM.
+- **Network**: shortest-path routes over a link graph; full-duplex links have
+  one channel per direction, Wi-Fi is half duplex; max-min fair sharing; each
+  TCP flow is also limited by window/RTT and by the Mathis loss bound.
+- **Heat and energy**: first-order RC thermal model with exact
+  throttle-crossing events; convex utilisation-power curve.
+- **Failures**: per-node Poisson and scripted failures with repair, each node
+  on its own random stream; checkpoints; gang-atomic restart.
+- **Uncertainty**: a seed perturbs every performance, power, thermal,
+  reliability and link parameter by factors uniform in `[1-u, 1+u]`, where `u`
+  is the cluster's declared uncertainty or `--uncertainty-floor`, whichever is
+  larger.
+- **Lower bound**: an optimistic critical-path/aggregate-capacity bound used as
+  a sanity check.
 
-- Legacy samples every candidate, gathers at least three observations per node,
-  then retains a 10% random exploration branch.
-- Adaptive forces the least-observed feasible candidates to three samples,
-  then uses an optimistic UCB cost adjustment during exploitation.
-- Cold pairs use 2 s startup and 10 s runtime defaults.
-- Observed failures increase task/node risk cost.
+---
 
-Each node owns `/var/lib/ts-data`. The controller propagates producer node and
-output byte metadata. Same-node children read the host path directly;
-cross-node children fetch from `ts-fileserver` over HTTP. The same provenance
-drives Adaptive's transfer estimate before binding.
+## Learning, locality and cold starts
+
+- The live scheduler learns runtime and start-up per (task template, node):
+  rolling medians, an EMA (alpha 0.3) for drift detection, failure counts. A
+  template is explored until it has three observations on every compatible
+  node; Legacy keeps 10% random exploration; Adaptive adds a UCB term.
+- Data locality: transfer time is part of every finish-time estimate; HEFT-RA
+  also accounts for concurrent transfers that share a link or a producer's
+  egress.
+- Image locality: images are explicit (size, registry route, per-node cache);
+  HEFT-RA does not pay twice for a pull already in progress.
+  `run_mechanism_studies.py` measures how much cold starts cost and how much
+  image awareness recovers.
+
+---
 
 ## Evidence
 
-| Corpus | Size | Headline result |
-|---|---:|---|
-| Closed DAG exploration | 13,800 records; 1,500 cases | Nine policies plus 300 tractable static-oracle references |
-| Closed DAG confirmation | 26,250 records; 3,750 cases | HEFT has 1.69% mean deployable regret; EFT is the close second |
-| Overlapping exploration | 3,600 records; 400 cases | Nine-policy objective and tail comparison |
-| Overlapping confirmation | 7,000 records; 1,000 cases | Historical Legacy leads deadline hit; Adaptive leads response tail; EFT/HEFT lead energy |
-| Legacy tuning | 256 candidates; 90/45/75 train/validation/holdout cases | Tuned exact Legacy improves v1 under cold and warm holdout profiles; P95 makespan is unchanged |
-| Same-host Kind pilot | 6 trials; 30 workflows; 120 final tasks | Adaptive lowers median workflow response 25.18% but raises makespan 21.30% with 17 kill/restart preemptions |
-| Same-host Kind topology matrix | 27 trials; 135 workflows; 540 final tasks | 100% completion; tuned lowers v1 makespan in 3/3 profiles; Adaptive lowers median response 19.40% vs tuned but raises makespan 14.80% with 44 preemptions |
-
-Raw and derived artifacts are under `results/`. See `ENGINEERING_JOURNAL.md`
-for the decision log, incident history, evidence map, and rejected claims.
+| Artifact | Content | Produced by |
+|---|---|---|
+| `results/sim/closed-{exploratory-s0-19,confirmatory-s200-249,holdout-s400-449}/` | Closed-DAG records and summaries | `run_experiment_lab.py run` |
+| `results/sim/workload-*/` | Overlapping-workload records and summaries | `run_experiment_lab.py workload` |
+| `results/final-evidence-synthesis.{json,md}` | Cross-phase rankings, contrasts, seed independence, family leaders | `analyze_final_evidence.py` |
+| `results/mechanism-studies.{json,md}` | Cold-start and priority/preemption studies | `run_mechanism_studies.py` |
+| `results/legacy-weight-search.json` | Tuned Legacy weights and holdout | `tune_legacy_weights.py` |
+| `results/legacy-factor-ablation.json`, `legacy-factor-stress.json` | Factor importance | `run_legacy_ablation.py`, `run_legacy_factor_stress.py` |
+| `results/contextual-policy-search.json` | Contextual portfolio search | `tune_contextual_policy.py` |
+| `results/kind-validation/` | Live clusters, trials, twin predictions, validation report | `scripts/run-kind-validation.ps1` or `make kind-validation` |
+| `results/archive/` | Pre-correction evidence | archive |
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
 TaskScheduler/
-├── simulation/                  # Event engine, resource model, policies, analysis
+├── simulation/                 # Engine, resources, estimators, policies, experiments, Kind twin
 ├── scenarios/
-│   ├── clusters/                # Five calibrated/synthetic cluster families
-│   ├── workflows/               # Fifteen closed DAG families
-│   └── workloads/               # Four overlapping arrival traces
+│   ├── clusters/               # Five cluster families
+│   ├── workflows/              # Fifteen closed workflows
+│   ├── workloads/              # Four overlapping workloads
+│   ├── benchmark-suite.yaml    # 160-workflow generated corpus (contextual search)
+│   └── policy-profiles/        # Contextual policy profile
 ├── controlplane/
-│   ├── controller/main.py       # Workflow lifecycle and dependency progression
-│   └── scheduler/main.py        # Live placement, binding, learning, preemption
-├── services/                    # Live policies, ECT, profiles, data, telemetry
-├── models/                      # Shared domain models and profile store
-├── crds/                        # Workflow and TaskTemplate CRDs
-├── manifests/                   # Root Kustomize installation resources
-├── images/                      # Controller, fileserver, probe, thermal images
-├── tasks/                       # CPU, memory, and I/O task images
-├── examples/                    # TaskTemplates and sample Workflow objects
-├── experiments/k8s/            # Live experiment TaskTemplates
-├── results/                     # Retained raw records and summaries
-├── tests/                       # Simulator, service, and control-plane tests
-├── thesis/                      # LaTeX paper and generated PDF
-├── run_experiment_lab.py        # Closed and overlapping simulation CLI
-├── tune_legacy_weights.py       # Normalized train/validation/holdout search
-├── analyze_final_evidence.py    # Exploratory/confirmatory synthesis
-├── run_k8s_experiment.py        # Cyclic multi-policy live harness
-├── scripts/run-kind-topology-matrix.ps1
-│                                # Recreate and run three Kind profiles
-├── analyze_kind_topologies.py   # Integrity gate and live aggregation
-└── ENGINEERING_JOURNAL.md       # Decisions, incidents, evidence, open work
+│   ├── controller/main.py      # Workflow lifecycle, Pods, status
+│   └── scheduler/main.py       # Live ordering, placement, binding, preemption
+├── services/                   # Live policies, ECT, DAG metrics, preemption, cluster state
+├── models/                     # Domain models and profile store
+├── engine.py                   # Live scheduling tick (admission, readiness, actions)
+├── crds/                       # Workflow and TaskTemplate CRDs
+├── k8s/, kustomization.yaml    # RBAC, Deployments, DaemonSets
+├── images/                     # Control-plane, fileserver, bandwidth-probe, thermal images
+├── tasks/                      # CPU, memory and I/O task images (speed emulation)
+├── clusters/                   # Kind configs; kind_profiles.yaml = validation profiles
+├── experiments/k8s/            # Live TaskTemplates and batches
+├── examples/                   # Sample TaskTemplates and Workflows
+├── kind_lab.py                 # Build an emulated Kind profile (caps, netem, speeds)
+├── run_experiment_lab.py       # Simulation matrices
+├── run_mechanism_studies.py    # Cold-start and priority studies
+├── analyze_final_evidence.py   # Cross-phase synthesis
+├── tune_legacy_weights.py, run_legacy_ablation.py, run_legacy_factor_stress.py
+├── tune_contextual_policy.py
+├── run_k8s_experiment.py       # Live harness (warm-up + trials)
+├── kind_twin_predict.py        # Twin calibration and predictions
+├── analyze_kind_validation.py  # Integrity gate, live ranking, twin agreement
+├── scripts/                    # Kind validation runner, k3s scripts, cluster checks
+├── tests/                      # Unit, property and regression tests
+├── thesis/                     # LaTeX source and PDF
+└── ENGINEERING_JOURNAL.md      # Step-by-step history, decisions, evidence map
 ```
 
 ---
 
 ## Prerequisites
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| Python | 3.12 tested | Simulator, controller, scheduler, and harnesses |
-| Docker Desktop | 29.x tested | Images and local node containers |
-| Kind | 0.32 tested | Repeatable same-host Kubernetes |
-| kubectl | 1.36 tested | Install and inspect the control plane |
-| GNU Make + Bash | Optional on Windows | Convenience targets and k3s scripts |
+| Tool | Tested version | Purpose |
+|---|---|---|
+| Python | 3.12 | Simulator, tooling, controller and scheduler |
+| Docker Desktop | 29.x | Images and Kind node containers |
+| Kind | 0.32 | Same-host Kubernetes |
+| kubectl | 1.36 | Installation and inspection |
+| MiKTeX / TeX Live | any recent | Building the thesis |
+| GNU Make + Bash | optional on Windows | Convenience targets, k3s scripts |
 
 ---
 
-## Simulation Lab
+## Simulation lab
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python -m pytest
+python -m pytest -q
 ```
 
-Run a small closed-DAG comparison:
+A small comparison:
 
 ```powershell
 python run_experiment_lab.py run `
-  --clusters balanced-heterogeneous-4 `
-  --workflows diamond,fanout-1to8 `
-  --policies fcfs,eft,heft,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive `
-  --seeds 0:2 `
-  --sample-uncertainty `
+  --clusters balanced-heterogeneous-4 --workflows diamond,fanout-1to8 `
+  --policies fcfs,eft,heft,heft-ra,k8s-default,adaptive `
+  --seeds 0:3 --sample-uncertainty --uncertainty-floor 0.1 `
   --output results/local-closed-smoke
 ```
 
-Run a small overlapping-arrival comparison:
+The retained matrices were produced with:
 
 ```powershell
-python run_experiment_lab.py workload `
-  --clusters balanced-heterogeneous-4 `
-  --workloads priority-burst `
-  --policies fcfs,eft,heft,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive `
-  --seeds 0:2 `
-  --sample-uncertainty `
-  --output results/local-workload-smoke
-```
-
-The CLI writes raw JSON Lines and CSV plus derived JSON and Markdown summaries.
-`run_simulation.py` remains as an older in-process learning demo; it is not the
-source of the definitive experiment matrices.
-
-Run the reproducible Legacy search or factor checks:
-
-```powershell
+$closed = "fcfs,random,eft,heft,heft-ra,heft-ra-cap,k8s-default,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive"
+$common = "eft,heft,heft-ra,heft-ra-cap,k8s-default,legacy,legacy-v1,legacy-tuned,adaptive-no-preempt,adaptive"
+python run_experiment_lab.py run --seeds 0:20 --sample-uncertainty --policies $closed `
+  --oracle-max-tasks 3 --output results/sim/closed-exploratory-s0-19
+python run_experiment_lab.py run --seeds 200:250 --sample-uncertainty --uncertainty-floor 0.1 `
+  --policies $common --output results/sim/closed-confirmatory-s200-249
+python run_experiment_lab.py run --seeds 400:450 --sample-uncertainty --uncertainty-floor 0.1 `
+  --policies $common --output results/sim/closed-holdout-s400-449
+python run_experiment_lab.py workload --seeds 0:20 --sample-uncertainty --policies $closed `
+  --output results/sim/workload-exploratory-s0-19
+python run_experiment_lab.py workload --seeds 200:250 --sample-uncertainty --uncertainty-floor 0.1 `
+  --policies $common --output results/sim/workload-confirmatory-s200-249
+python run_experiment_lab.py workload --seeds 400:450 --sample-uncertainty --uncertainty-floor 0.1 `
+  --policies $common --output results/sim/workload-holdout-s400-449
+# fresh holdout, run once after heft-ra-cap was added
+python run_experiment_lab.py run --seeds 600:650 --sample-uncertainty --uncertainty-floor 0.1 `
+  --policies $common --output results/sim/closed-holdout2-s600-649
+python run_experiment_lab.py workload --seeds 600:650 --sample-uncertainty --uncertainty-floor 0.1 `
+  --policies $common --output results/sim/workload-holdout2-s600-649
+python analyze_final_evidence.py
+python run_mechanism_studies.py
 python tune_legacy_weights.py --candidates 256 --finalists 25
 python run_legacy_ablation.py --seeds 300:310
 python run_legacy_factor_stress.py
-python analyze_final_evidence.py
+python tune_contextual_policy.py --candidates 64 --thermal-step 60 --quiet
 ```
 
-The search is finite and objective-specific. The selected vector is the best
-eligible validation finalist observed in that search, not a global optimum.
-The final analyzer reads the retained exploratory and confirmatory JSONL files
-and regenerates `results/final-evidence-synthesis.json` and its Markdown
-companion with deterministic bootstrap seed 2026.
+Seeds `0:20` are half-open (0-19). Never run simulations while live trials are
+being timed: both share the same CPU.
 
 ---
 
-## Kubernetes Deployment
+## Kubernetes deployment
 
-Every supported local profile has one control-plane container and worker
-containers on the same Docker host. The final local matrix uses these three
-low-footprint profiles:
+Two kinds of local cluster are available:
 
-| Profile | Workers | Purpose |
+| Profile | Created by | Purpose |
 |---|---|---|
-| `small` | CPU_OPT 2 CPU/1024 MiB; MEM_OPT 1 CPU/1536 MiB; IO_OPT 1 CPU/768 MiB | Balanced heterogeneous |
-| `homogeneous` | Three CPU_OPT workers, each 1.25 CPU/1280 MiB | Equal-capacity control |
-| `skewed` | CPU_OPT 2.5 CPU; MEM_OPT 1792 MiB; IO_OPT advertised I/O 1500 | Strong resource asymmetry |
+| `small`, `big` | `setup_cluster.sh` (Kind configs in `clusters/`) | Demos; no emulated speeds or links |
+| `balanced`, `homogeneous`, `edge` | `kind_lab.py create` (`clusters/kind_profiles.yaml`) | Validation: per-node slots, CPU/memory/I/O speeds, `tc netem` links, container caps |
 
-`setup_cluster.sh big` remains available for a six-worker, higher-memory local
-profile but is not part of the low-footprint topology matrix.
-
-On Windows, run the Make/Bash commands from Git Bash or WSL with Docker,
-Kind, and kubectl available on `PATH`.
-
-### One-command smoke test
+Step by step (Git Bash or WSL on Windows):
 
 ```bash
-make smoke
+make cluster PROFILE=balanced   # or small / homogeneous / edge
+make images load install
+make examples                   # sample TaskTemplates + linear-pipeline-1
+make watch-workflow
 ```
 
-This recreates the small Kind cluster, builds and loads all seven images,
-installs the CRDs/control plane/node agents, applies the sample templates and
-workflow, and waits for `linear-pipeline-1` to finish.
-
-### Step-by-step
+Select a live policy:
 
 ```bash
-make cluster                 # setup_cluster.sh small + Docker cgroup caps
-make images                  # controller, agents, and three task images
-make load                    # load all images into ts-cluster
-make install                 # kubectl apply -k . and wait for rollouts
-make examples                # TaskTemplates + linear-pipeline-1
-make watch-workflow          # wait for the Workflow CRD to finish
-```
-
-The installation entry point is the repository-root `kustomization.yaml`.
-It installs both CRDs, RBAC, controller and scheduler Deployments, and the
-fileserver, bandwidth-probe, and thermal DaemonSets.
-
-### Select a live policy
-
-The static Kustomize manifest selects Adaptive. Select an explicit policy and
-wait for the new scheduler Pod:
-
-```bash
-kubectl -n ts-system set env deployment/ts-scheduler TS_POLICY=adaptive
+kubectl -n ts-system set env deployment/ts-scheduler TS_POLICY=heft-ra
 kubectl -n ts-system rollout status deployment/ts-scheduler --timeout=120s
-kubectl -n ts-system logs deployment/ts-scheduler --tail=50
+kubectl -n ts-system logs deployment/ts-scheduler --tail=20   # prints "Policy: ..."
 ```
 
-Use `TS_POLICY=legacy-v1`, `legacy-tuned`, or `adaptive` for comparisons;
-`legacy` remains an alias for v1. The startup log identifies the selected
-implementation; verify it before collecting results.
+Live policy names: `kube-default`, `legacy-v1`, `legacy-tuned`, `eft`,
+`heft`, `heft-ra`, `heft-ra-cap`, `adaptive`, `adaptive-no-preempt`, `calibrate`
+(`legacy` is an alias of `legacy-v1`).
 
-### Run the retained live protocol
-
-The harness deletes only objects labeled for its experiment, rotates policy
-order by repetition, isolates profile state by policy/run, records exact Legacy
-weights, and writes partial results after every trial:
-
-```powershell
-python run_k8s_experiment.py `
-  --policies legacy-v1 legacy-tuned adaptive `
-  --repetitions 3 `
-  --topology-name small `
-  --output results/k8s-kind/policy-comparison-local.json
-```
-
-Run the complete same-host topology matrix from PowerShell:
-
-```powershell
-& .\scripts\run-kind-topology-matrix.ps1 `
-  -Profiles small,homogeneous,skewed `
-  -Repetitions 3 `
-  -Seed 2026
-
-python analyze_kind_topologies.py
-```
-
-The runner deliberately recreates `ts-cluster` for each profile and must not
-share the host with a simulator benchmark. The analyzer rejects incomplete
-artifacts, failed final tasks, container restarts, scheduler errors, incorrect
-weights, missing policies/repetitions, and cross-policy profile reuse. Its JSON
-and Markdown outputs include topology-level, aggregate, and per-workflow-shape
-response summaries for final policy recommendations, plus per-repetition
-makespan/response sequences for assessing whether policy-isolated profile
-accumulation coincides with improvement.
-
-The retained matrix passes every gate: 27/27 trials, 135/135 workflows, and
-540/540 final tasks complete successfully, with no final task failure,
-scheduler error, collection error, or container restart.
-
-The earlier six-trial pilot remains at
-`results/k8s-kind/policy-comparison.json`. It compares original exact Legacy
-with Adaptive and is formative mechanism evidence, not part of the final
-three-policy aggregate.
-
-### Physical k3s path
-
-`cluster.env.example`, `scripts/k3s-server.sh`, `scripts/k3s-agent.sh`, and the
-`make k3s-*`, `images-multiarch`, and `install-remote` targets define a
-multi-machine path. That path has not been executed for the retained evidence.
-Do not describe script availability as completed physical validation.
+A physical two-host path is provided by `make k3s-server`, `make k3s-agent`
+and `make verify-cluster` (see `scripts/`); it has not been used for the
+retained evidence.
 
 ---
 
-## Monitoring & Debugging
+## Same-host validation matrix
 
-```bash
-# Control-plane and node-agent health
-kubectl -n ts-system get deployments,daemonsets,pods -o wide
-
-# Controller and scheduler logs
-make logs-controller
-make logs-scheduler
-
-# Workflow state and task placement
-kubectl get workflows -A
-kubectl get pods -A -o wide
-
-# Declared heterogeneity
-kubectl get nodes -L node-type -L ts.capacity/cpu -L ts.capacity/memory
-
-# Bandwidth and thermal annotations for one node
-kubectl get node ts-node-cpu-1 -o yaml | grep -E 'ts.io/(bw-from|cpu-temp)'
-
-# Persisted scheduler profile ConfigMap
-kubectl -n ts-system get configmap ts-scheduler-profiles -o yaml
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run-kind-validation.ps1 `
+  -Profiles balanced,homogeneous,edge -Repetitions 3 -Seed 2026
 ```
 
-For a failed Workflow, inspect its `status.tasks`, the controller log, the
-scheduler log, and the final Pod log. A deleted preemption victim is recreated
-as a new Pod, so it will not appear as a container restart on the final Pod.
+or `make kind-validation`. For every profile this:
+
+1. creates the emulated cluster and records the applied qdiscs, caps and
+   speeds (`results/kind-validation/<profile>-cluster.json`);
+2. loads the images and installs the control plane;
+3. refreshes bandwidth probes, runs the calibrated warm-up, and runs 2
+   batches x 9 policies x 3 repetitions in seeded random order, every trial
+   starting from the same warm profiles (`<profile>.json`);
+4. calibrates the twin on the warm-up only and predicts every trial
+   (`<profile>-twin.json`);
+
+and finally `analyze_kind_validation.py` checks integrity and writes
+`summary.{json,md}`. A full matrix takes about ten hours on an i5-8300H.
+Twin predictions that also model the measured completion-to-rebind latency
+are produced with `python kind_twin_predict.py results/kind-validation/<profile>.json
+--slot-release measured` (written to `<profile>-twin-release.json`) and are
+compared automatically when present. Results from before the scheduler
+refresh fix are kept in `results/kind-validation/pre-fix-run/`.
+
+---
+
+## Monitoring and debugging
+
+```bash
+kubectl -n ts-system get pods -o wide
+kubectl -n ts-system logs deployment/ts-scheduler --tail=100
+kubectl -n ts-system logs deployment/ts-controller --tail=100
+kubectl get workflows -A
+kubectl get workflow <name> -o jsonpath='{.status.tasks}'
+kubectl get nodes -L node-type,ts.io/kind-profile
+kubectl get node <node> -o jsonpath='{.metadata.annotations}'   # bw-from-*, netem, speeds, thermal
+kubectl -n ts-system get configmap ts-emulation -o yaml           # emulated speeds
+```
 
 ---
 
 ## Testing
 
-The main executable gate is:
-
 ```powershell
-python -m pytest
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The suite covers schemas and scenario provenance, virtual time, resource
-conservation, thermal behavior, policies, failures/checkpoints, gangs,
-preemption, experiment output, live ECT/UCB, controller retry/failure
-propagation, scheduler binding/deletion, and the live harness.
-
-Additional build checks:
-
-```bash
-python -m compileall simulation services controlplane models
-kubectl kustomize . > /dev/null
-kubectl apply --dry-run=server -k .   # requires a reachable cluster
-cd thesis && latexmk -pdf -interaction=nonstopmode -halt-on-error thesis.tex
-```
+The suite covers the simulator models and properties (Hypothesis), every
+audited regression, HEFT-RA, the live policies, controller and scheduler
+behaviour, the preemption engine, the Kind lab and twin, the validation
+analyzer and the evidence synthesis.
 
 ---
 
-## Cleanup
+## Documentation
 
-```bash
-make uninstall   # remove TaskScheduler resources from the current cluster
-make clean       # delete the local Kind cluster
-```
-
-The live experiment harness removes its own labeled Workflow and Pod objects
-unless `--keep-workflows` is supplied. It does not delete the retained JSON
-result artifact.
+- `thesis/thesis.pdf` - the dissertation (introduction, state of the art,
+  architecture, evaluation, limitations).
+- `ENGINEERING_JOURNAL.md` - what was done, step by step, with examples,
+  including the audit and every correction.
+- `ARCHITECTURE.md` - component map.
+- `summary.md` - one-page summary.

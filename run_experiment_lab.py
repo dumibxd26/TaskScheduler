@@ -36,16 +36,30 @@ def _selection(directory: Path, value: str) -> list[Path]:
 
 
 def _seeds(value: str) -> list[int]:
+    """Parse ``a,b,c`` or a half-open ``start:stop`` range into seeds."""
     if ":" in value:
         start, stop = (int(part) for part in value.split(":", 1))
-        return list(range(start, stop))
-    return [int(item) for item in value.split(",")]
+        seeds = list(range(start, stop))
+    else:
+        seeds = [int(item) for item in value.split(",") if item.strip()]
+    if not seeds:
+        raise ValueError(
+            f"seed selection {value!r} is empty; ranges are half-open, "
+            "so use 0:10 for seeds 0 through 9")
+    return seeds
+
+
+def _policy_list(value: str) -> list[str]:
+    policies = [item.strip() for item in value.split(",") if item.strip()]
+    if not policies:
+        raise ValueError("at least one policy is required")
+    return policies
 
 
 def _run(args) -> int:
     clusters = _selection(ROOT / "scenarios" / "clusters", args.clusters)
     workflows = _selection(ROOT / "scenarios" / "workflows", args.workflows)
-    policies = [item.strip() for item in args.policies.split(",") if item.strip()]
+    policies = _policy_list(args.policies)
     seeds = _seeds(args.seeds)
 
     def progress(completed, total, record):
@@ -66,6 +80,7 @@ def _run(args) -> int:
         oracle_max_tasks=args.oracle_max_tasks,
         oracle_max_assignments=args.oracle_max_assignments,
         sample_uncertainty=args.sample_uncertainty,
+        uncertainty_floor=args.uncertainty_floor,
         progress=progress,
     )
     paths = write_experiment_outputs(args.output, records)
@@ -90,7 +105,7 @@ def _analyze(args) -> int:
 def _workload(args) -> int:
     clusters = _selection(ROOT / "scenarios" / "clusters", args.clusters)
     workloads = _selection(ROOT / "scenarios" / "workloads", args.workloads)
-    policies = [item.strip() for item in args.policies.split(",") if item.strip()]
+    policies = _policy_list(args.policies)
     seeds = _seeds(args.seeds)
 
     def progress(completed, total, record):
@@ -109,6 +124,7 @@ def _workload(args) -> int:
         thermal_step_s=args.thermal_step,
         max_virtual_time_s=args.max_virtual_time,
         sample_uncertainty=args.sample_uncertainty,
+        uncertainty_floor=args.uncertainty_floor,
         progress=progress,
     )
     paths = write_workload_outputs(args.output, records)
@@ -141,6 +157,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="sample each cluster's declared calibration uncertainty per seed",
     )
+    run.add_argument(
+        "--uncertainty-floor", type=float, default=0.0,
+        help="minimum per-parameter perturbation when sampling (e.g. 0.1)",
+    )
     run.add_argument("--quiet", action="store_true")
     run.set_defaults(func=_run)
 
@@ -164,6 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     workload.add_argument(
         "--max-virtual-time", type=float, default=365 * 24 * 3600)
     workload.add_argument("--sample-uncertainty", action="store_true")
+    workload.add_argument("--uncertainty-floor", type=float, default=0.0)
     workload.add_argument("--quiet", action="store_true")
     workload.set_defaults(func=_workload)
     return parser

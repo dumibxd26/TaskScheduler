@@ -84,8 +84,8 @@ fi
 # ── 2. Install k3s server inside the VM ──────────────────────────────
 echo "[2/5] Installing k3s server inside ${VM}..."
 multipass exec "${VM}" -- bash -c "command -v k3s >/dev/null 2>&1 || \
-    curl -sfL https://get.k3s.io | K3S_TOKEN='${CLUSTER_TOKEN}' \
-        sudo sh -s - server \
+    curl -sfL https://get.k3s.io | \
+        sudo env K3S_TOKEN='${CLUSTER_TOKEN}' sh -s - server \
             --node-name=ts-master \
             --tls-san=${SERVER_IP} \
             --bind-address=0.0.0.0 \

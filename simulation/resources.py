@@ -1,17 +1,22 @@
 """Calibratable fluid resource models for the discrete-event simulator.
 
-The network allocator follows progressive max-min filling over routed links.
-Thermal evolution uses a first-order resistance/capacitance model. CPU rates
-respect calibrated per-core throughput, Amdahl scaling, SMT efficiency, and a
-node-wide capacity ceiling.
+Network transfers are fluid TCP flows routed over a link graph. Each flow is
+limited by progressive max-min filling over the channels it crosses, by its
+receive window divided by the round-trip time, and by the Mathis et al.
+(1997) loss/RTT ceiling ``MSS * sqrt(3/2) / (RTT * sqrt(p))``. Full-duplex
+media expose one channel per direction; half-duplex media (802.11 by default)
+share one channel between both directions. Thermal evolution uses a
+first-order resistance/capacitance model. CPU rates respect calibrated
+per-core throughput, Amdahl scaling, SMT efficiency, and a node-wide capacity
+ceiling that includes the SMT gain.
 """
 
 from __future__ import annotations
 
 import heapq
 import math
+import weakref
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Iterable, Mapping
 
 from simulation.schema import (
@@ -26,7 +31,36 @@ from simulation.schema import (
 
 PROTOCOL_EFFICIENCY = 0.97
 DEFAULT_TCP_WINDOW_MIB = 4.0
+TCP_MSS_BYTES = 1448.0
+MATHIS_CONSTANT = math.sqrt(1.5)
+MIB = 1024.0 * 1024.0
 EPSILON = 1e-9
+
+
+@dataclass(frozen=True)
+class Hop:
+    """One traversal of a link; ``forward`` means endpoint_a -> endpoint_b."""
+
+    link_id: str
+    forward: bool
+
+
+def channel_id(link: NetworkLinkSpec, forward: bool) -> str:
+    """Capacity resource used by a hop (shared for half-duplex media)."""
+    if not link.is_full_duplex:
+        return link.link_id
+    return f"{link.link_id}:{'ab' if forward else 'ba'}"
+
+
+def tcp_loss_rate_cap_mib_s(round_trip_time_s: float, loss_rate: float) -> float:
+    """Mathis et al. steady-state TCP throughput bound for random loss."""
+    if loss_rate <= 0 or round_trip_time_s <= 0:
+        return float("inf")
+    bytes_per_s = (
+        TCP_MSS_BYTES * MATHIS_CONSTANT
+        / (round_trip_time_s * math.sqrt(loss_rate))
+    )
+    return bytes_per_s / MIB
 
 
 @dataclass(frozen=True)
@@ -35,8 +69,10 @@ class NetworkFlow:
     source: str
     destination: str
     remaining_mib: float
-    route: tuple[str, ...]
+    route: tuple[Hop, ...]
+    channels: tuple[str, ...]
     round_trip_time_s: float
+    loss_rate: float = 0.0
     tcp_window_mib: float = DEFAULT_TCP_WINDOW_MIB
 
     @property
@@ -44,6 +80,14 @@ class NetworkFlow:
         if self.round_trip_time_s <= 0 or self.tcp_window_mib <= 0:
             return float("inf")
         return self.tcp_window_mib / self.round_trip_time_s
+
+    @property
+    def loss_rate_cap_mib_s(self) -> float:
+        return tcp_loss_rate_cap_mib_s(self.round_trip_time_s, self.loss_rate)
+
+    @property
+    def tcp_rate_cap_mib_s(self) -> float:
+        return min(self.tcp_window_rate_mib_s, self.loss_rate_cap_mib_s)
 
 
 @dataclass(frozen=True)
@@ -54,117 +98,185 @@ class CpuDemand:
 
 
 class NetworkTopology:
-    """Shortest-latency routing over an explicit cluster link graph."""
+    """Shortest-latency directional routing over an explicit link graph."""
 
     def __init__(self, cluster: ClusterSpec):
         self.links = {link.link_id: link for link in cluster.links}
-        self._adjacency: dict[str, list[tuple[str, NetworkLinkSpec]]] = {}
+        self._adjacency: dict[str, list[tuple[str, NetworkLinkSpec, bool]]] = {}
         for link in cluster.links:
-            self._adjacency.setdefault(link.endpoint_a, []).append((link.endpoint_b, link))
-            self._adjacency.setdefault(link.endpoint_b, []).append((link.endpoint_a, link))
+            self._adjacency.setdefault(link.endpoint_a, []).append(
+                (link.endpoint_b, link, True))
+            self._adjacency.setdefault(link.endpoint_b, []).append(
+                (link.endpoint_a, link, False))
+        self.channel_capacities: dict[str, float] = {}
+        for link in cluster.links:
+            for forward in (True, False):
+                channel = channel_id(link, forward)
+                capacity = effective_link_capacity_mib_s(link, forward)
+                previous = self.channel_capacities.get(channel)
+                self.channel_capacities[channel] = (
+                    capacity if previous is None else min(previous, capacity))
+        self._routes: dict[tuple[str, str], tuple[Hop, ...]] = {}
 
-    @lru_cache(maxsize=None)
-    def route(self, source: str, destination: str) -> tuple[str, ...]:
+    def route(self, source: str, destination: str) -> tuple[Hop, ...]:
+        key = (source, destination)
+        cached = self._routes.get(key)
+        if cached is not None:
+            return cached
+        route = self._shortest_route(source, destination)
+        self._routes[key] = route
+        return route
+
+    def _shortest_route(self, source: str, destination: str) -> tuple[Hop, ...]:
         if source == destination:
             return ()
-        pending: list[tuple[float, str, tuple[str, ...]]] = [(0.0, source, ())]
+        pending: list[tuple[float, int, str, tuple[Hop, ...]]] = [
+            (0.0, 0, source, ())]
         best = {source: 0.0}
+        sequence = 1
         while pending:
-            latency, current, path = heapq.heappop(pending)
+            latency, _, current, path = heapq.heappop(pending)
             if current == destination:
                 return path
             if latency > best.get(current, float("inf")):
                 continue
-            for neighbor, link in self._adjacency.get(current, ()):
-                candidate = latency + link.latency_ms
+            for neighbor, link, forward in self._adjacency.get(current, ()):
+                candidate = latency + link.latency_in_direction_ms(forward)
                 if candidate < best.get(neighbor, float("inf")):
                     best[neighbor] = candidate
-                    heapq.heappush(
-                        pending, (candidate, neighbor, path + (link.link_id,)))
+                    heapq.heappush(pending, (
+                        candidate, sequence, neighbor,
+                        path + (Hop(link.link_id, forward),)))
+                    sequence += 1
         raise ValueError(f"no network route from '{source}' to '{destination}'")
 
-    def one_way_latency_s(self, route: Iterable[str]) -> float:
-        return sum(self.links[link_id].latency_ms for link_id in route) / 1000.0
+    def one_way_latency_s(self, route: Iterable[Hop]) -> float:
+        return sum(
+            self.links[hop.link_id].latency_in_direction_ms(hop.forward)
+            for hop in route
+        ) / 1000.0
+
+    def round_trip_time_s(self, source: str, destination: str,
+                          forward_latency_s: float | None = None) -> float:
+        forward = (
+            self.one_way_latency_s(self.route(source, destination))
+            if forward_latency_s is None else forward_latency_s
+        )
+        return forward + self.one_way_latency_s(self.route(destination, source))
+
+    def channels(self, route: Iterable[Hop]) -> tuple[str, ...]:
+        return tuple(
+            channel_id(self.links[hop.link_id], hop.forward) for hop in route)
+
+    def path_loss_rate(self, route: Iterable[Hop]) -> float:
+        delivered = 1.0
+        for hop in route:
+            delivered *= 1.0 - self.links[hop.link_id].packet_loss_rate
+        return 1.0 - delivered
+
+    def bottleneck_capacity_mib_s(self, route: Iterable[Hop]) -> float:
+        return min(
+            (self.channel_capacities[channel] for channel in self.channels(route)),
+            default=float("inf"),
+        )
 
     def new_flow(self, flow_id: str, source: str, destination: str,
-                 size_mib: float, tcp_window_mib: float = DEFAULT_TCP_WINDOW_MIB) -> NetworkFlow:
+                 size_mib: float, tcp_window_mib: float = DEFAULT_TCP_WINDOW_MIB,
+                 *, forward_latency_s: float | None = None) -> NetworkFlow:
         route = self.route(source, destination)
-        latency = self.one_way_latency_s(route)
         return NetworkFlow(
             flow_id=flow_id,
             source=source,
             destination=destination,
             remaining_mib=float(size_mib),
             route=route,
-            round_trip_time_s=2.0 * latency,
+            channels=self.channels(route),
+            round_trip_time_s=self.round_trip_time_s(
+                source, destination, forward_latency_s),
+            loss_rate=self.path_loss_rate(route),
             tcp_window_mib=tcp_window_mib,
         )
 
 
-def effective_link_capacity_mib_s(link: NetworkLinkSpec) -> float:
-    """Application-level TCP payload capacity after headers and loss."""
+def effective_link_capacity_mib_s(link: NetworkLinkSpec,
+                                  forward: bool = True) -> float:
+    """Application-level payload capacity after headers and lost packets."""
     return (
-        link.bandwidth_mib_s
+        link.bandwidth_in_direction(forward)
         * PROTOCOL_EFFICIENCY
         * max(0.0, 1.0 - link.packet_loss_rate)
     )
 
 
+_TOPOLOGY_CACHE: dict[int, tuple["weakref.ref[ClusterSpec]", NetworkTopology]] = {}
+
+
+def topology_for(cluster: ClusterSpec) -> NetworkTopology:
+    """Reuse one routing table per immutable cluster object.
+
+    Entries are keyed by object identity and dropped by a weakref callback, so
+    sampled clusters do not accumulate for the life of the process.
+    """
+    key = id(cluster)
+    entry = _TOPOLOGY_CACHE.get(key)
+    if entry is not None and entry[0]() is cluster:
+        return entry[1]
+    topology = NetworkTopology(cluster)
+    reference = weakref.ref(
+        cluster, lambda _reference, key=key: _TOPOLOGY_CACHE.pop(key, None))
+    _TOPOLOGY_CACHE[key] = (reference, topology)
+    return topology
+
+
 def allocate_network_rates(
     flows: Iterable[NetworkFlow],
-    links: Mapping[str, NetworkLinkSpec],
+    capacities: Mapping[str, float],
 ) -> dict[str, float]:
-    """Allocate max-min fair rates under all route and TCP-window constraints."""
+    """Allocate max-min fair rates under channel and per-flow TCP ceilings."""
     flow_by_id = {flow.flow_id: flow for flow in flows if flow.remaining_mib > EPSILON}
     if not flow_by_id:
         return {}
     for flow in flow_by_id.values():
-        if not flow.route:
+        if not flow.channels:
             raise ValueError(f"network flow '{flow.flow_id}' has an empty route")
+        unknown = [channel for channel in flow.channels if channel not in capacities]
+        if unknown:
+            raise ValueError(
+                f"network flow '{flow.flow_id}' uses unknown channels {unknown}")
 
     rates = {flow_id: 0.0 for flow_id in flow_by_id}
+    caps = {flow_id: flow.tcp_rate_cap_mib_s for flow_id, flow in flow_by_id.items()}
     residual = {
-        link_id: effective_link_capacity_mib_s(link)
-        for link_id, link in links.items()
+        channel: float(capacities[channel])
+        for flow in flow_by_id.values() for channel in flow.channels
     }
     active = set(flow_by_id)
 
     while active:
-        link_counts = {
-            link_id: sum(link_id in flow_by_id[flow_id].route for flow_id in active)
-            for link_id in links
-        }
-        increments = [
-            residual[link_id] / count
-            for link_id, count in link_counts.items()
-            if count > 0
-        ]
-        increments.extend(
-            flow_by_id[flow_id].tcp_window_rate_mib_s - rates[flow_id]
-            for flow_id in active
-        )
-        delta = min(increments, default=0.0)
-        if delta <= EPSILON:
-            break
-
+        counts: dict[str, int] = {}
         for flow_id in active:
-            rates[flow_id] += delta
-        for link_id, count in link_counts.items():
-            if count:
-                residual[link_id] = max(0.0, residual[link_id] - delta * count)
-
-        saturated_links = {
-            link_id for link_id, count in link_counts.items()
-            if count and residual[link_id] <= EPSILON
+            for channel in flow_by_id[flow_id].channels:
+                counts[channel] = counts.get(channel, 0) + 1
+        increments = [residual[channel] / count for channel, count in counts.items()]
+        increments.extend(caps[flow_id] - rates[flow_id] for flow_id in active)
+        delta = max(0.0, min(increments))
+        if delta > EPSILON:
+            for flow_id in active:
+                rates[flow_id] += delta
+            for channel, count in counts.items():
+                residual[channel] = max(0.0, residual[channel] - delta * count)
+        saturated = {
+            channel for channel, count in counts.items()
+            if residual[channel] <= EPSILON
         }
-        newly_frozen = {
+        frozen = {
             flow_id for flow_id in active
-            if any(link_id in saturated_links for link_id in flow_by_id[flow_id].route)
-            or rates[flow_id] >= flow_by_id[flow_id].tcp_window_rate_mib_s - EPSILON
+            if any(channel in saturated for channel in flow_by_id[flow_id].channels)
+            or rates[flow_id] >= caps[flow_id] - EPSILON
         }
-        if not newly_frozen:
+        if not frozen:
             break
-        active -= newly_frozen
+        active -= frozen
 
     return rates
 
@@ -210,6 +322,22 @@ def _effective_task_cores(cpu: CpuSpec, requested_cores: float) -> float:
     return physical + smt_threads * cpu.smt_efficiency
 
 
+def effective_node_cores(cpu: CpuSpec) -> float:
+    """Physical cores plus the throughput gained from SMT siblings."""
+    smt_threads = max(0, cpu.logical_cpus - cpu.physical_cores)
+    return cpu.physical_cores + smt_threads * cpu.smt_efficiency
+
+
+def node_cpu_capacity_gflops(node: NodeSpec, throttle: float = 1.0) -> float:
+    """Node-wide compute ceiling available to scheduled work."""
+    return (
+        node.cpu.calibrated_gflops_per_core
+        * effective_node_cores(node.cpu)
+        * (1.0 - node.background_cpu_fraction)
+        * throttle
+    )
+
+
 def allocate_cpu_rates(node: NodeSpec, demands: Iterable[CpuDemand],
                        temperature_c: float) -> dict[str, float]:
     """Allocate GFLOP/s while respecting per-task scaling and node capacity."""
@@ -217,13 +345,7 @@ def allocate_cpu_rates(node: NodeSpec, demands: Iterable[CpuDemand],
     if not demand_list:
         return {}
     throttle = thermal_throttle_factor(temperature_c, node.thermal)
-    available_fraction = 1.0 - node.background_cpu_fraction
-    node_capacity = (
-        node.cpu.calibrated_gflops_per_core
-        * node.cpu.physical_cores
-        * available_fraction
-        * throttle
-    )
+    node_capacity = node_cpu_capacity_gflops(node, throttle)
     desired: dict[str, float] = {}
     for demand in demand_list:
         effective_cores = _effective_task_cores(node.cpu, demand.requested_cores)
@@ -285,6 +407,15 @@ def storage_rate_limit_mib_s(storage: StorageSpec, random_io_fraction: float,
         + random_io_fraction / max(random_throughput, EPSILON)
     )
     return 1.0 / max(seconds_per_mib, EPSILON)
+
+
+def task_storage_limit_mib_s(storage: StorageSpec, random_io_fraction: float,
+                             block_kib: float, *, write: bool) -> float:
+    """Per-task storage ceiling: device mix limit and optional per-task cap."""
+    limit = storage_rate_limit_mib_s(
+        storage, random_io_fraction, block_kib, write=write)
+    cap = storage.per_task_write_mib_s if write else storage.per_task_read_mib_s
+    return limit if cap is None else min(limit, cap)
 
 
 def cache_miss_fraction(working_set_mib: float, cache_reuse_fraction: float,

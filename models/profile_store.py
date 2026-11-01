@@ -250,10 +250,10 @@ class ProfileStore:
                 target = profile.metrics_by_node[nid]
                 if isinstance(payload, list):
                     obs_list = payload  # legacy
-                    target.ema_runtime = None
+                    persisted_ema = None
                 else:
                     obs_list = payload.get("observations", [])
-                    target.ema_runtime = payload.get("ema_runtime")
+                    persisted_ema = payload.get("ema_runtime")
                 for o in obs_list:
                     target.add_observation(Observation(
                         runtime=o["runtime"],
@@ -268,4 +268,8 @@ class ProfileStore:
                         transfer_seconds=float(o.get("xfer", 0.0)),
                         timestamp=o.get("ts", 0.0),
                     ))
+                # Replaying observations rebuilds an EMA from scratch; the
+                # persisted value is authoritative for drift detection.
+                if persisted_ema is not None:
+                    target.ema_runtime = float(persisted_ema)
             profile.update_preferences()

@@ -46,5 +46,5 @@ cluster:
   links:
     - {id: hot-link, endpoints: [hot-fast, switch], bandwidth_mib_s: 238, latency_ms: 0.2}
     - {id: reliable-link, endpoints: [reliable, switch], bandwidth_mib_s: 238, latency_ms: 0.2}
-    - {id: flaky-link, endpoints: [flaky-edge, switch], bandwidth_mib_s: 55, latency_ms: 4, jitter_ms: 1.5, packet_loss_rate: 0.004, medium: wifi}
+    - {id: flaky-link, endpoints: [flaky-edge, switch], bandwidth_mib_s: 55, latency_ms: 4, jitter_ms: 1.5, packet_loss_rate: 0.001, medium: wifi}
     - {id: registry-link, endpoints: [registry, switch], bandwidth_mib_s: 476, latency_ms: 0.2}

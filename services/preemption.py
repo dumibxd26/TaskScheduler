@@ -49,24 +49,34 @@ class PreemptionPlanner:
         self.min_runtime_s = min_runtime_s
         # node_id -> list of (timestamp) of recent preemptions
         self._recent: Dict[str, List[float]] = defaultdict(list)
+        # Victims already promised to an earlier queued task in this tick.
+        self._planned_by_node: Dict[str, int] = defaultdict(int)
+        self._planned_victims: set = set()
+
+    def begin_tick(self) -> None:
+        """Forget victims planned in the previous decision round."""
+        self._planned_by_node.clear()
+        self._planned_victims.clear()
 
     # ------------------------------------------------------------------
     # Budget checks
     # ------------------------------------------------------------------
-    def _can_preempt_node(self, node_id: str, now: float) -> bool:
-        """Has this node already hit its per-minute preemption cap?"""
+    def _remaining_node_budget(self, node_id: str, now: float) -> int:
+        """Preemptions still allowed on this node in the sliding minute."""
         cutoff = now - 60.0
         recent = [t for t in self._recent[node_id] if t > cutoff]
         self._recent[node_id] = recent
-        return len(recent) < self.max_per_node_per_min
+        return (self.max_per_node_per_min - len(recent)
+                - self._planned_by_node[node_id])
 
-    @staticmethod
-    def _is_near_completion(rt: "RunningTask") -> bool:
+    def _can_preempt_node(self, node_id: str, now: float) -> bool:
+        """Has this node already hit its per-minute preemption cap?"""
+        return self._remaining_node_budget(node_id, now) > 0
+
+    def _is_near_completion(self, rt: "RunningTask") -> bool:
         """True if the running task is predicted to finish very soon."""
         remaining = rt.estimated_remaining
-        if remaining is not None and remaining < NEAR_COMPLETION_THRESHOLD_S:
-            return True
-        return False
+        return remaining is not None and remaining < self.near_completion_s
 
     def _has_run_long_enough(self, rt: "RunningTask", now: float) -> bool:
         """Avoid thrashing: don't preempt something that just started."""
@@ -104,12 +114,15 @@ class PreemptionPlanner:
         for node in state.cluster.nodes:
             if node.node_type not in task_tmpl.compatible_node_types:
                 continue
-            if not self._can_preempt_node(node.node_id, now):
+            budget = self._remaining_node_budget(node.node_id, now)
+            if budget <= 0:
                 continue
 
             # What running tasks could we evict?
             evictable = []
             for rt in node.active_tasks.values():
+                if rt.task_instance_id in self._planned_victims:
+                    continue
                 # Find the workflow that owns this running task to compare priority.
                 victim_wf = self._find_victim_workflow(
                     rt.task_instance_id, state)
@@ -154,7 +167,8 @@ class PreemptionPlanner:
 
             if (freed_cpu >= task_tmpl.cpu_request
                     and freed_mem >= task_tmpl.memory_request
-                    and victims):
+                    and victims
+                    and len(victims) <= budget):
                 actions = [
                     PreemptAction(
                         victim_task_instance_id=v.task_instance_id,
@@ -167,8 +181,12 @@ class PreemptionPlanner:
         if not candidates:
             return None
 
-        # Pick the node where we evict fewest victims.
-        best_node, best_actions = min(candidates, key=lambda x: len(x[1]))
+        # Pick the node where we evict fewest victims (stable by node id).
+        best_node, best_actions = min(
+            candidates, key=lambda x: (len(x[1]), x[0].node_id))
+        self._planned_by_node[best_node.node_id] += len(best_actions)
+        self._planned_victims.update(
+            action.victim_task_instance_id for action in best_actions)
         return best_actions
 
     # ------------------------------------------------------------------
@@ -177,5 +195,5 @@ class PreemptionPlanner:
     def record_preemption(self, node_id: str, task_id: str,
                           now: Optional[float] = None):
         """Call after a preemption is applied."""
-        ts = now or _time.time()
+        ts = now if now is not None else _time.time()
         self._recent[node_id].append(ts)

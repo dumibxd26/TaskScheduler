@@ -1,0 +1,94 @@
+# Same-host Kind validation profiles (single source of truth).
+#
+# Each profile mirrors one simulator cluster family on the i5-8300H / 12 GB
+# development PC. A worker offers `slots` concurrent task slots of 0.5 logical
+# CPU (every validation task requests 0.5 CPU and is capped at 500m), so its
+# logical capacity label is slots * 0.5. Heterogeneity is emulated per worker:
+#
+#   speed.cpu / speed.memory / speed.io  - work multiplier 1/speed applied by
+#       the task images to their resource class (ts-emulation ConfigMap);
+#   network.delay_ms / network.rate_mbit - tc-netem on the worker's eth0
+#       egress (a producer's outgoing data is shaped, ingress is not).
+#
+# Docker caps leave headroom for the node agents (kubelet, kube-proxy,
+# kindnet, fileserver, telemetry): cpus = slots * 0.5 + agent_cpus. Total task
+# load stays at 3 CPUs (6 slots) so the 4-core host is not saturated.
+schema_version: 1
+host:
+  model: Intel Core i5-8300H (4 cores / 8 threads), 12 GB RAM, Docker Desktop WSL2
+  agent_cpus: 0.35
+  agent_memory_mib: 576
+  task_memory_mib: 224
+cluster_name: ts-cluster
+profiles:
+  balanced:
+    mirrors: balanced-heterogeneous-4
+    description: >-
+      Complementary CPU-, memory-, and I/O-optimised workers plus a slow edge
+      worker behind a constrained link.
+    workers:
+      - name: ts-node-cpu
+        node_type: CPU_OPT
+        slots: 2
+        speed: {cpu: 1.0, memory: 0.55, io: 0.5}
+        network: {delay_ms: 2, rate_mbit: 800}
+      - name: ts-node-mem
+        node_type: MEM_OPT
+        slots: 2
+        speed: {cpu: 0.45, memory: 1.0, io: 0.55}
+        network: {delay_ms: 2, rate_mbit: 800}
+      - name: ts-node-io
+        node_type: IO_OPT
+        slots: 1
+        speed: {cpu: 0.4, memory: 0.5, io: 1.0}
+        network: {delay_ms: 2, rate_mbit: 800}
+      - name: ts-node-edge
+        node_type: GENERAL
+        slots: 1
+        speed: {cpu: 0.3, memory: 0.3, io: 0.3}
+        network: {delay_ms: 10, rate_mbit: 60}
+  homogeneous:
+    mirrors: homogeneous-4
+    description: Three equivalent workers behind equal links (control profile).
+    workers:
+      - name: ts-node-equal-1
+        node_type: GENERAL
+        slots: 2
+        speed: {cpu: 1.0, memory: 1.0, io: 1.0}
+        network: {delay_ms: 4, rate_mbit: 400}
+      - name: ts-node-equal-2
+        node_type: GENERAL
+        slots: 2
+        speed: {cpu: 1.0, memory: 1.0, io: 1.0}
+        network: {delay_ms: 4, rate_mbit: 400}
+      - name: ts-node-equal-3
+        node_type: GENERAL
+        slots: 2
+        speed: {cpu: 1.0, memory: 1.0, io: 1.0}
+        network: {delay_ms: 4, rate_mbit: 400}
+  edge:
+    mirrors: asymmetric-edge-5
+    description: >-
+      Two fast core workers on a fast link and two slow edge workers behind
+      high-latency, low-rate links.
+    workers:
+      - name: ts-node-core-1
+        node_type: CPU_OPT
+        slots: 2
+        speed: {cpu: 1.0, memory: 1.0, io: 1.0}
+        network: {delay_ms: 1, rate_mbit: 1000}
+      - name: ts-node-core-2
+        node_type: CPU_OPT
+        slots: 2
+        speed: {cpu: 1.0, memory: 1.0, io: 1.0}
+        network: {delay_ms: 1, rate_mbit: 1000}
+      - name: ts-node-edge-1
+        node_type: GENERAL
+        slots: 1
+        speed: {cpu: 0.35, memory: 0.35, io: 0.35}
+        network: {delay_ms: 15, rate_mbit: 40}
+      - name: ts-node-edge-2
+        node_type: GENERAL
+        slots: 1
+        speed: {cpu: 0.35, memory: 0.35, io: 0.35}
+        network: {delay_ms: 15, rate_mbit: 40}

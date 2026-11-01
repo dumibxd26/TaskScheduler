@@ -78,6 +78,8 @@ spec:
                 state:
                   type: string
                   enum: [QUEUED, ADMITTED, RUNNING, FINISHED, FAILED]
+                admittedAt:
+                  type: string
                 tasksTotal:
                   type: integer
                 tasksFinished:
@@ -97,8 +99,11 @@ spec:
                       state:       { type: string }
                       podName:     { type: string }
                       nodeName:    { type: string }
+                      readyAt:     { type: string }
+                      podCreatedAt: { type: string }
                       startedAt:   { type: string }
                       finishedAt: { type: string }
+                      attempts:    { type: integer }
                       runtimeSeconds:
                         type: number
                         format: float

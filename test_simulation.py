@@ -106,6 +106,7 @@ failed = 0
 
 
 def check(label: str, condition: bool):
+    """Print a scenario line and fail the enclosing pytest test on error."""
     global passed, failed
     status = "PASS" if condition else "FAIL"
     print(f"  [{status}] {label}")
@@ -113,6 +114,7 @@ def check(label: str, condition: bool):
         passed += 1
     else:
         failed += 1
+    assert condition, label
 
 
 # ===========================================================================

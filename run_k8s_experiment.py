@@ -1,10 +1,31 @@
-"""Run repeatable policy comparisons on a live Kubernetes cluster."""
+"""Run the same-host Kind validation protocol for one cluster profile.
+
+Protocol (per profile):
+
+1. Install TaskTemplates, wait until every worker has measured bandwidth
+   annotations, and clean previous experiment objects.
+2. Calibration: run the ``calibrate`` policy on independent tasks until each
+   (template, node) pair has three successful runs. The resulting learned
+   profile is the shared warm start of every trial, and the measured task
+   work, startup, and orchestration latency calibrate the simulator twin.
+3. Trials: for each repetition, run every (batch, policy) pair once in a
+   seeded random order. Each trial restarts ts-scheduler with the policy and
+   a fresh copy of the warm profile, submits one batch from
+   ``experiments/k8s/batches.yaml``, and records every workflow, task, Pod,
+   binding, preemption, and transfer.
+
+All timings come from the cluster clock (controller, scheduler, and task
+containers share the Docker VM kernel clock): workflow response is the latest
+task finish minus the controller's sub-second admission time.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
 import math
+import random
+import re
 import statistics
 import time
 from collections import Counter
@@ -25,10 +46,22 @@ VERSION = "v1"
 WORKFLOWS = "workflows"
 TASKTEMPLATES = "tasktemplates"
 EXPERIMENT_PREFIX = "ts-exp-"
-EXPERIMENT_NAME = "kind-policy-comparison"
+EXPERIMENT_NAME = "kind-validation"
 SCHEDULER_DEPLOYMENT = "ts-scheduler"
 SCHEDULER_NAMESPACE = "ts-system"
-SUPPORTED_POLICIES = ("legacy", "legacy-v1", "legacy-tuned", "adaptive")
+SUPPORTED_POLICIES = (
+    "kube-default", "legacy-v1", "legacy-tuned", "eft", "heft", "heft-ra",
+    "heft-ra-cap", "adaptive-no-preempt", "adaptive",
+)
+# Scheduler log lines that signal a problem anywhere in the scheduler, not
+# tied to one Pod; they carry no trial prefix and must not be filtered out.
+SCHEDULER_ERROR_MARKERS = (
+    "tick error", "Traceback", "watch error", "refresh failed",
+    "event failed", "failed to parse pod", "invalid workflow DAG",
+)
+CALIBRATION_SAMPLES = 3
+_AT = re.compile(r"at=([0-9.]+)")
+_POD = re.compile(r"'([^']+)'")
 
 
 def utc_now() -> str:
@@ -43,6 +76,11 @@ def parse_timestamp(value):
     return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 
 
+def epoch(value) -> float | None:
+    parsed = parse_timestamp(value)
+    return parsed.timestamp() if parsed is not None else None
+
+
 def elapsed_seconds(start, finish):
     start_dt = parse_timestamp(start)
     finish_dt = parse_timestamp(finish)
@@ -52,22 +90,32 @@ def elapsed_seconds(start, finish):
 
 
 def percentile(values, fraction):
+    """Nearest-rank percentile."""
     if not values:
         return None
     ordered = sorted(values)
     return ordered[max(0, math.ceil(fraction * len(ordered)) - 1)]
 
 
-def policy_order_for_repetition(policies, repetition):
-    ordered = list(policies)
-    if not ordered:
-        return []
-    offset = (repetition - 1) % len(ordered)
-    return ordered[offset:] + ordered[:offset]
+def trial_schedule(batches, policies, repetitions, seed):
+    """Seeded random order of every (batch, policy) pair per repetition."""
+    rng = random.Random(seed)
+    schedule = []
+    for repetition in range(1, repetitions + 1):
+        pairs = [(batch, policy) for batch in batches for policy in policies]
+        rng.shuffle(pairs)
+        schedule.extend((repetition, batch, policy) for batch, policy in pairs)
+    return schedule
 
 
-def workflow_body(name, shape, priority, workflow_class, tasks,
-                  *, preemptable=True, run_id=""):
+def load_batches(path):
+    document = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    if document.get("schema_version") != 1:
+        raise ValueError("unsupported batch schema_version")
+    return document
+
+
+def workflow_body(name, workflow, run_id, trial_id, batch, policy):
     return {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "Workflow",
@@ -76,88 +124,49 @@ def workflow_body(name, shape, priority, workflow_class, tasks,
             "labels": {
                 "ts.io/experiment": EXPERIMENT_NAME,
                 "ts.io/experiment-run": run_id,
-                "ts.io/experiment-shape": shape,
+                "ts.io/experiment-trial": trial_id,
+                "ts.io/experiment-batch": batch,
+                "ts.io/experiment-policy": policy,
+                "ts.io/experiment-shape": workflow["name"],
             },
         },
         "spec": {
-            "priority": priority,
-            "preemptable": preemptable,
-            "workflowClass": workflow_class,
-            "tasks": tasks,
+            "priority": workflow["priority"],
+            "preemptable": bool(workflow.get("preemptable", True)),
+            "workflowClass": workflow.get("workflow_class", "BATCH"),
+            "tasks": [
+                {key: value for key, value in task.items()} for task in workflow["tasks"]
+            ],
         },
     }
 
 
-def workflow_batch(policy, repetition, run_id):
-    prefix = f"{EXPERIMENT_PREFIX}{policy}-r{repetition}"
-    pressure = workflow_body(
-        f"{prefix}-pressure", "pressure", "BEST_EFFORT", "BURST",
-        [
-            {"name": f"long-{index}", "template": "experiment-cpu-long"}
-            for index in range(1, 7)
-        ],
-        run_id=run_id,
-    )
-    critical = workflow_body(
-        f"{prefix}-critical", "critical", "CRITICAL", "BURST",
-        [
-            {"name": "urgent-1", "template": "experiment-cpu"},
-            {"name": "urgent-2", "template": "experiment-cpu"},
-        ],
-        preemptable=False,
-        run_id=run_id,
-    )
-    pipeline = workflow_body(
-        f"{prefix}-pipeline", "pipeline", "BATCH", "PIPELINE",
-        [
-            {"name": "ingest", "template": "experiment-io"},
-            {
-                "name": "stage",
-                "template": "experiment-mem",
-                "dependsOn": [{
-                    "parent": "ingest",
-                    "dependencyType": "DATA",
-                    "dataFields": ["generated_file_path"],
-                }],
-            },
-            {
-                "name": "crunch",
-                "template": "experiment-cpu",
-                "dependsOn": [{
-                    "parent": "stage",
-                    "dependencyType": "DATA",
-                    "dataFields": ["processed_array_size"],
-                }],
-            },
-        ],
-        run_id=run_id,
-    )
-    fanout = workflow_body(
-        f"{prefix}-fanout", "fanout", "BATCH", "BATCH",
-        [{"name": "source", "template": "experiment-io"}] + [
-            {
-                "name": f"leaf-{index}",
-                "template": "experiment-cpu",
-                "dependsOn": [{
-                    "parent": "source",
-                    "dependencyType": "EXECUTION",
-                }],
-            }
-            for index in range(1, 5)
-        ],
-        run_id=run_id,
-    )
-    parallel = workflow_body(
-        f"{prefix}-parallel", "parallel", "BATCH", "BATCH",
-        [
-            {"name": "io", "template": "experiment-io"},
-            {"name": "memory", "template": "experiment-mem"},
-            {"name": "cpu-1", "template": "experiment-cpu"},
-            {"name": "cpu-2", "template": "experiment-cpu"},
-        ],
-        run_id=run_id,
-    )
-    return pressure, critical, [pipeline, fanout, parallel]
+def batch_bodies(document, batch, run_id, trial_id, policy):
+    """Return (arrival, body) pairs for one trial."""
+    bodies = []
+    for workflow in document["batches"][batch]["workflows"]:
+        name = f"{EXPERIMENT_PREFIX}{trial_id}-{workflow['name']}"
+        bodies.append((workflow.get("arrival", "start"),
+                       workflow_body(name, workflow, run_id, trial_id, batch, policy)))
+    return bodies
+
+
+def calibration_bodies(templates, workers, run_id, samples=CALIBRATION_SAMPLES):
+    bodies = []
+    for template in templates:
+        workflow = {
+            "name": f"cal-{template.removeprefix('experiment-')}",
+            "priority": "BATCH",
+            "workflow_class": "BATCH",
+            "tasks": [
+                {"name": f"sample-{index:02d}", "template": template}
+                for index in range(1, samples * workers + 1)
+            ],
+        }
+        name = f"{EXPERIMENT_PREFIX}{workflow['name']}"
+        bodies.append(workflow_body(
+            name, workflow, run_id, "calibration", "calibration", "calibrate"))
+    return bodies
 
 
 def task_metrics(log_text):
@@ -175,7 +184,7 @@ def task_metrics(log_text):
     transfer_source = None
     for line in log_text.splitlines():
         if line.startswith("[LOCAL]"):
-            transfer_mode = "local"
+            transfer_mode = transfer_mode or "local"
             transfer_source = line
         elif line.startswith("[FETCH]"):
             transfer_mode = "remote"
@@ -183,83 +192,31 @@ def task_metrics(log_text):
     return result, transfer_mode, transfer_source
 
 
-def summarize_policy(trials):
-    workflows = [
-        workflow
-        for trial in trials
-        for workflow in trial.get("workflows", [])
-    ]
-    successful = [
-        workflow for workflow in workflows
-        if workflow.get("state") == "FINISHED"
-    ]
-    responses = [
-        workflow["response_seconds"] for workflow in successful
-        if workflow.get("response_seconds") is not None
-    ]
-    makespans = [
-        trial["makespan_seconds"] for trial in trials
-        if trial.get("makespan_seconds") is not None
-    ]
-    trial_means = [
-        trial["mean_response_seconds"] for trial in trials
-        if trial.get("mean_response_seconds") is not None
-    ]
-    critical_responses = [
-        workflow["response_seconds"] for workflow in successful
-        if workflow.get("shape") == "critical"
-        and workflow.get("response_seconds") is not None
-    ]
-    tasks = [task for workflow in workflows for task in workflow["tasks"]]
-    runtimes = [
-        task["container_runtime_seconds"] for task in tasks
-        if task.get("container_runtime_seconds") is not None
-    ]
-    transfers = [
-        float(task.get("metrics", {}).get("transfer_seconds", 0.0))
-        for task in tasks
-    ]
-    placements = Counter(
-        task["node_name"] for task in tasks if task.get("node_name"))
-    by_shape = {}
-    for shape in sorted({workflow.get("shape") for workflow in workflows}):
-        shape_responses = [
-            workflow["response_seconds"] for workflow in successful
-            if workflow.get("shape") == shape
-            and workflow.get("response_seconds") is not None
-        ]
-        by_shape[shape] = {
-            "completed": len(shape_responses),
-            "median_response_seconds": (
-                statistics.median(shape_responses)
-                if shape_responses else None),
-        }
-    return {
-        "trials": len(trials),
-        "workflows": len(workflows),
-        "successful_workflows": len(successful),
-        "completion_rate": len(successful) / len(workflows) if workflows else 0,
-        "median_workflow_response_seconds": (
-            statistics.median(responses) if responses else None),
-        "p95_workflow_response_seconds": percentile(responses, 0.95),
-        "median_trial_mean_response_seconds": (
-            statistics.median(trial_means) if trial_means else None),
-        "median_trial_makespan_seconds": (
-            statistics.median(makespans) if makespans else None),
-        "median_critical_response_seconds": (
-            statistics.median(critical_responses)
-            if critical_responses else None),
-        "median_task_runtime_seconds": (
-            statistics.median(runtimes) if runtimes else None),
-        "preemptions": sum(trial.get("preemptions", 0) for trial in trials),
-        "remote_fetches": sum(
-            task.get("transfer_mode") == "remote" for task in tasks),
-        "local_reads": sum(
-            task.get("transfer_mode") == "local" for task in tasks),
-        "total_transfer_seconds": sum(transfers),
-        "placements_by_node": dict(sorted(placements.items())),
-        "by_shape": by_shape,
-    }
+def parse_scheduler_events(log_text, prefix):
+    """Bind and preemption events (with cluster-clock epochs) for a trial."""
+    binds, preemptions, errors, scheduler_errors, completions = [], [], [], [], []
+    for line in log_text.splitlines():
+        if any(marker in line for marker in SCHEDULER_ERROR_MARKERS):
+            scheduler_errors.append(line)
+        if prefix not in line:
+            continue
+        at = _AT.search(line)
+        pod = _POD.search(line)
+        if line.startswith("[BIND]") and pod:
+            node = line.split("->")[-1].split("'")[1] if "->" in line else None
+            binds.append({"pod": pod.group(1), "node": node,
+                          "at": float(at.group(1)) if at else None})
+        elif line.startswith("[DONE]") and pod:
+            completions.append({"pod": pod.group(1),
+                                "at": float(at.group(1)) if at else None})
+        elif line.startswith("[PREEMPT]") and pod:
+            preemptions.append({"pod": pod.group(1),
+                                "at": float(at.group(1)) if at else None,
+                                "line": line})
+        if "ERROR" in line or "tick error" in line or "failed" in line.lower():
+            errors.append(line)
+    return {"binds": binds, "preemptions": preemptions, "error_lines": errors,
+            "scheduler_errors": scheduler_errors, "completions": completions}
 
 
 class KubernetesExperiment:
@@ -281,11 +238,13 @@ class KubernetesExperiment:
             return None
 
     def apply_tasktemplates(self, path):
+        names = []
         for body in yaml.safe_load_all(Path(path).read_text(encoding="utf-8")):
             if not body:
                 continue
             body.setdefault("metadata", {})["namespace"] = self.namespace
             name = body["metadata"]["name"]
+            names.append(name)
             try:
                 current = self.custom.get_namespaced_custom_object(
                     GROUP, VERSION, self.namespace, TASKTEMPLATES, name)
@@ -298,6 +257,7 @@ class KubernetesExperiment:
                     raise
                 self.custom.create_namespaced_custom_object(
                     GROUP, VERSION, self.namespace, TASKTEMPLATES, body)
+        return names
 
     def clean_experiment_objects(self):
         listing = self.custom.list_namespaced_custom_object(
@@ -319,21 +279,18 @@ class KubernetesExperiment:
                     grace_period_seconds=0,
                     body=client.V1DeleteOptions(grace_period_seconds=0),
                 )
-        deadline = time.monotonic() + 120
+        deadline = time.monotonic() + 180
         while time.monotonic() < deadline:
             workflows = self.custom.list_namespaced_custom_object(
                 GROUP, VERSION, self.namespace, WORKFLOWS).get("items", [])
-            experiment_workflows = [
+            remaining = [
                 item for item in workflows
-                if item["metadata"]["name"].startswith(EXPERIMENT_PREFIX)
-            ]
-            pods = self.core.list_namespaced_pod(self.namespace).items
-            experiment_pods = [
-                pod for pod in pods
+                if item["metadata"]["name"].startswith(EXPERIMENT_PREFIX)]
+            pods = [
+                pod for pod in self.core.list_namespaced_pod(self.namespace).items
                 if (pod.metadata.labels or {}).get(
-                    "ts.io/workflow", "").startswith(EXPERIMENT_PREFIX)
-            ]
-            if not experiment_workflows and not experiment_pods:
+                    "ts.io/workflow", "").startswith(EXPERIMENT_PREFIX)]
+            if not remaining and not pods:
                 self.clean_experiment_data()
                 return
             time.sleep(1)
@@ -352,18 +309,90 @@ class KubernetesExperiment:
         for pod in fileservers:
             stream(
                 self.core.connect_get_namespaced_pod_exec,
-                pod.metadata.name,
-                SCHEDULER_NAMESPACE,
-                container="nginx",
-                command=command,
-                stderr=True,
-                stdin=False,
-                stdout=True,
-                tty=False,
+                pod.metadata.name, SCHEDULER_NAMESPACE,
+                container="nginx", command=command,
+                stderr=True, stdin=False, stdout=True, tty=False,
             )
 
-    def configure_scheduler(self, policy, seed, run_id):
-        profile_suffix = f"{policy}-{run_id}"
+    def worker_nodes(self):
+        return [
+            node for node in self.core.list_node().items
+            if "node-type" in (node.metadata.labels or {})
+        ]
+
+    def refresh_bandwidth(self, interval_s=86400, timeout_seconds=900):
+        """Run one fresh probe round, then keep the probe idle during trials.
+
+        The DaemonSet is restarted with a long interval; each probe measures
+        every peer once at start-up. Waiting for new timestamps on every
+        worker guarantees the scheduler and the twin see the shaped links.
+        """
+        stamp = "ts.io/bw-last-probed-at"
+        before = {
+            node.metadata.name: (node.metadata.annotations or {}).get(stamp)
+            for node in self.worker_nodes()}
+        patch = {"spec": {"template": {
+            "metadata": {"annotations": {"ts.io/probe-restarted-at": utc_now()}},
+            "spec": {"containers": [{
+                "name": "probe",
+                "env": [{"name": "TS_PROBE_INTERVAL_S", "value": str(interval_s)}],
+            }]},
+        }}}
+        self.apps.patch_namespaced_daemon_set("ts-bw-probe", SCHEDULER_NAMESPACE, patch)
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            nodes = self.worker_nodes()
+            if all(
+                (node.metadata.annotations or {}).get(stamp)
+                not in (None, before.get(node.metadata.name))
+                for node in nodes
+            ):
+                self.wait_for_bandwidth(timeout_seconds=60)
+                return
+            time.sleep(5)
+        raise TimeoutError("bandwidth probe did not complete a fresh round")
+
+    def wait_for_bandwidth(self, timeout_seconds=600):
+        """Wait until every worker reports a measured rate from every peer."""
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            nodes = self.worker_nodes()
+            names = {node.metadata.name for node in nodes}
+            complete = True
+            for node in nodes:
+                annotations = node.metadata.annotations or {}
+                peers = {
+                    key.removeprefix("ts.io/bw-from-")
+                    for key in annotations if key.startswith("ts.io/bw-from-")}
+                if not (names - {node.metadata.name}) <= peers:
+                    complete = False
+            if complete:
+                return
+            time.sleep(5)
+        raise TimeoutError("bandwidth annotations did not appear for all workers")
+
+    def write_profile_configmap(self, name, raw_profiles):
+        body = client.V1ConfigMap(
+            metadata=client.V1ObjectMeta(name=name),
+            data={"profiles": raw_profiles} if raw_profiles else {},
+        )
+        try:
+            self.core.replace_namespaced_config_map(name, self.namespace, body)
+        except ApiException as exc:
+            if exc.status != 404:
+                raise
+            self.core.create_namespaced_config_map(self.namespace, body)
+
+    def read_profile_configmap(self, name):
+        try:
+            return (self.core.read_namespaced_config_map(
+                name, self.namespace).data or {}).get("profiles", "")
+        except ApiException as exc:
+            if exc.status == 404:
+                return ""
+            raise
+
+    def configure_scheduler(self, policy, seed, configmap, profile_path):
         patch = {
             "spec": {
                 "template": {
@@ -378,18 +407,9 @@ class KubernetesExperiment:
                             "env": [
                                 {"name": "TS_POLICY", "value": policy},
                                 {"name": "TS_RANDOM_SEED", "value": str(seed)},
-                                {
-                                    "name": "TS_PROFILE_PATH",
-                                    "value": f"/data/profiles-{profile_suffix}.json",
-                                },
-                                {
-                                    "name": "TS_PROFILE_CONFIGMAP",
-                                    "value": f"ts-profiles-{profile_suffix}",
-                                },
-                                {
-                                    "name": "TS_PERSIST_INTERVAL_S",
-                                    "value": "5",
-                                },
+                                {"name": "TS_PROFILE_PATH", "value": profile_path},
+                                {"name": "TS_PROFILE_CONFIGMAP", "value": configmap},
+                                {"name": "TS_PERSIST_INTERVAL_S", "value": "5"},
                             ],
                         }],
                     },
@@ -399,26 +419,26 @@ class KubernetesExperiment:
         self.apps.patch_namespaced_deployment(
             SCHEDULER_DEPLOYMENT, SCHEDULER_NAMESPACE, patch)
         pod = self.wait_for_scheduler()
-        expected = "AdaptivePolicy" if policy == "adaptive" else (
-            "LegacyEightFactorPolicy")
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + 90
         log_text = ""
         while time.monotonic() < deadline:
             log_text = self.core.read_namespaced_pod_log(
                 pod.metadata.name, SCHEDULER_NAMESPACE)
-            if f"Policy: {expected}" in log_text:
+            if f"Policy: " in log_text and f"({policy})" in log_text:
                 break
             time.sleep(1)
         else:
             raise RuntimeError(
                 f"scheduler did not start requested policy {policy}: {log_text}")
+        loaded = "Loaded" in log_text and configmap in log_text
         configuration = {
             "pod": pod.metadata.name,
             "policy": policy,
-            "profile_path": f"/data/profiles-{profile_suffix}.json",
-            "profile_configmap": f"ts-profiles-{profile_suffix}",
+            "profile_configmap": configmap,
+            "profile_path": profile_path,
+            "warm_profile_loaded": loaded,
         }
-        if policy != "adaptive":
+        if policy.startswith("legacy"):
             configuration["legacy_weights"] = asdict(
                 legacy_weights_for_policy(policy))
         return configuration
@@ -432,7 +452,8 @@ class KubernetesExperiment:
             status = deployment.status
             if (status.observed_generation == deployment.metadata.generation
                     and (status.updated_replicas or 0) == desired
-                    and (status.available_replicas or 0) == desired):
+                    and (status.available_replicas or 0) == desired
+                    and (status.replicas or 0) == desired):
                 pods = self.core.list_namespaced_pod(
                     SCHEDULER_NAMESPACE,
                     label_selector="app.kubernetes.io/name=ts-scheduler",
@@ -440,15 +461,14 @@ class KubernetesExperiment:
                 ready = [
                     pod for pod in pods
                     if pod.status.phase == "Running"
+                    and pod.metadata.deletion_timestamp is None
                     and any(
                         condition.type == "Ready" and condition.status == "True"
                         for condition in (pod.status.conditions or [])
                     )
                 ]
-                if ready:
-                    return max(
-                        ready,
-                        key=lambda pod: pod.metadata.creation_timestamp)
+                if len(ready) == 1:
+                    return ready[0]
             time.sleep(1)
         raise TimeoutError("scheduler rollout did not become ready")
 
@@ -476,6 +496,7 @@ class KubernetesExperiment:
             GROUP, VERSION, self.namespace, WORKFLOWS, name)
         status = workflow.get("status", {})
         metadata = workflow["metadata"]
+        labels = metadata.get("labels", {})
         tasks = []
         for task_status in status.get("tasks", []):
             pod_name = task_status.get("podName")
@@ -484,9 +505,12 @@ class KubernetesExperiment:
                 "state": task_status.get("state"),
                 "pod_name": pod_name,
                 "node_name": task_status.get("nodeName"),
-                "status_runtime_seconds": task_status.get("runtimeSeconds"),
-                "container_runtime_seconds": None,
-                "startup_seconds": None,
+                "attempts": task_status.get("attempts"),
+                "ready_at": task_status.get("readyAt"),
+                "pod_created_at": task_status.get("podCreatedAt"),
+                "started_at": task_status.get("startedAt"),
+                "finished_at": task_status.get("finishedAt"),
+                "template": None,
                 "pod_phase": None,
                 "restart_count": None,
                 "metrics": {},
@@ -496,16 +520,12 @@ class KubernetesExperiment:
             if pod_name:
                 try:
                     pod = self.core.read_namespaced_pod(pod_name, self.namespace)
+                    record["template"] = (pod.metadata.annotations or {}).get(
+                        "ts.scheduler/task_template_id")
                     record["pod_phase"] = pod.status.phase
                     statuses = pod.status.container_statuses or []
                     if statuses:
                         record["restart_count"] = statuses[0].restart_count
-                        terminated = statuses[0].state.terminated
-                        if terminated:
-                            record["container_runtime_seconds"] = elapsed_seconds(
-                                terminated.started_at, terminated.finished_at)
-                            record["startup_seconds"] = elapsed_seconds(
-                                pod.status.start_time, terminated.started_at)
                     logs = self.core.read_namespaced_pod_log(
                         pod_name, self.namespace)
                     (record["metrics"], record["transfer_mode"],
@@ -513,44 +533,38 @@ class KubernetesExperiment:
                 except ApiException as exc:
                     record["collection_error"] = exc.reason
             tasks.append(record)
+        finished = [epoch(task["finished_at"]) for task in tasks if task["finished_at"]]
+        admitted = epoch(status.get("admittedAt"))
+        completion = max(finished) if finished else None
         return {
             "name": name,
-            "shape": metadata.get("labels", {}).get(
-                "ts.io/experiment-shape"),
+            "shape": labels.get("ts.io/experiment-shape"),
+            "priority": workflow["spec"].get("priority"),
             "state": status.get("state"),
             "creation_timestamp": metadata.get("creationTimestamp"),
+            "admitted_at": status.get("admittedAt"),
             "started_at": status.get("startedAt"),
             "finished_at": status.get("finishedAt"),
-            "response_seconds": elapsed_seconds(
-                metadata.get("creationTimestamp"), status.get("finishedAt")),
-            "execution_seconds": elapsed_seconds(
-                status.get("startedAt"), status.get("finishedAt")),
+            "completion_epoch": completion,
+            "admitted_epoch": admitted,
+            "response_seconds": (
+                completion - admitted
+                if completion is not None and admitted is not None else None),
             "tasks_finished": status.get("tasksFinished", 0),
             "tasks_failed": status.get("tasksFailed", 0),
             "message": status.get("message", ""),
             "tasks": tasks,
         }
 
-    def scheduler_events(self, workflow_prefix):
+    def scheduler_events(self, prefix):
         pod = self.wait_for_scheduler()
         logs = self.core.read_namespaced_pod_log(
             pod.metadata.name, SCHEDULER_NAMESPACE)
-        relevant = [
-            line for line in logs.splitlines() if workflow_prefix in line
-        ]
-        return {
-            "preemption_lines": [
-                line for line in relevant if "[PREEMPT]" in line],
-            "binding_lines": [line for line in relevant if "[BIND]" in line],
-            "error_lines": [
-                line for line in relevant
-                if "ERROR" in line or "failed" in line.lower()
-            ],
-        }
+        return parse_scheduler_events(logs, prefix)
 
     def cluster_metadata(self):
         nodes = []
-        for node in self.core.list_node().items:
+        for node in self.worker_nodes():
             labels = node.metadata.labels or {}
             annotations = node.metadata.annotations or {}
             nodes.append({
@@ -558,148 +572,181 @@ class KubernetesExperiment:
                 "node_type": labels.get("node-type"),
                 "capacity_cpu": labels.get("ts.capacity/cpu"),
                 "capacity_memory_mib": labels.get("ts.capacity/memory"),
-                "cooling_class": labels.get("ts.io/cooling-class"),
-                "thermal_throttle_c": labels.get("ts.io/thermal-throttle-c"),
+                "kind_profile": labels.get("ts.io/kind-profile"),
                 "cpu_temperature_c": annotations.get("ts.io/cpu-temp-c"),
-                "bandwidth_annotation_count": sum(
-                    key.startswith("ts.io/bw-from-")
-                    for key in annotations),
+                "bandwidth_mib_s_by_peer": {
+                    key.removeprefix("ts.io/bw-from-"): value
+                    for key, value in annotations.items()
+                    if key.startswith("ts.io/bw-from-")
+                },
+                "netem_delay_ms": annotations.get("ts.io/netem-delay-ms"),
+                "netem_rate_mbit": annotations.get("ts.io/netem-rate-mbit"),
+                "emulated_speed": annotations.get("ts.io/emulated-speed"),
             })
-        _, active = config.list_kube_config_contexts()
         return {
-            "context": active["name"] if active else None,
             "nodes": nodes,
             "evidence_scope": (
-                "single-host Kind worker containers with Docker cgroup caps; "
-                "not independent physical machines"),
+                "single-host Kind worker containers with Docker cgroup caps, "
+                "emulated speeds, and tc-netem links; not independent machines"),
         }
 
 
-def run_trial(experiment, policy, repetition, run_id, priority_delay_seconds):
-    pressure, critical, regular = workflow_batch(policy, repetition, run_id)
-    trial_started = utc_now()
-    experiment.create_workflow(pressure)
-    time.sleep(priority_delay_seconds)
-    experiment.create_workflow(critical)
-    for workflow in regular:
-        experiment.create_workflow(workflow)
-    bodies = [pressure, critical] + regular
-    names = [body["metadata"]["name"] for body in bodies]
+def run_workflows(experiment, timed_bodies, delay_seconds):
+    started = utc_now()
+    names = []
+    for arrival, body in timed_bodies:
+        if arrival == "start":
+            experiment.create_workflow(body)
+            names.append(body["metadata"]["name"])
+    delayed = [body for arrival, body in timed_bodies if arrival != "start"]
+    if delayed:
+        time.sleep(delay_seconds)
+        for body in delayed:
+            experiment.create_workflow(body)
+            names.append(body["metadata"]["name"])
     experiment.wait_for_workflows(names)
-    workflows = [experiment.collect_workflow(name) for name in names]
-    finished = [
-        parse_timestamp(workflow["finished_at"])
-        for workflow in workflows if workflow.get("finished_at")
-    ]
-    created = [
-        parse_timestamp(workflow["creation_timestamp"])
-        for workflow in workflows if workflow.get("creation_timestamp")
-    ]
-    responses = [
-        workflow["response_seconds"] for workflow in workflows
-        if workflow.get("response_seconds") is not None
-    ]
-    prefix = f"{EXPERIMENT_PREFIX}{policy}-r{repetition}"
-    events = experiment.scheduler_events(prefix)
+    return started, [experiment.collect_workflow(name) for name in names]
+
+
+def trial_summary(workflows):
+    responses = [w["response_seconds"] for w in workflows
+                 if w.get("response_seconds") is not None]
+    finished = [w["completion_epoch"] for w in workflows if w.get("completion_epoch")]
+    admitted = [w["admitted_epoch"] for w in workflows if w.get("admitted_epoch")]
     return {
-        "policy": policy,
-        "repetition": repetition,
-        "started_at": trial_started,
-        "finished_at": utc_now(),
-        "priority_delay_seconds": priority_delay_seconds,
-        "makespan_seconds": (
-            (max(finished) - min(created)).total_seconds()
-            if finished and created else None),
-        "mean_response_seconds": (
-            statistics.fmean(responses) if responses else None),
-        "preemptions": len(events["preemption_lines"]),
-        "scheduler_events": events,
-        "workflows": workflows,
+        "makespan_seconds": (max(finished) - min(admitted)
+                             if finished and admitted else None),
+        "mean_response_seconds": statistics.fmean(responses) if responses else None,
+        "median_response_seconds": statistics.median(responses) if responses else None,
+        "p95_response_seconds": percentile(responses, 0.95),
     }
 
 
 def write_results(path, document):
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(document, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    output.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n",
+                      encoding="utf-8")
+
+
+def calibrate(experiment, templates, run_id, seed, workers):
+    """Run the warm-up phase and return its raw evidence and learned profile."""
+    configmap = f"ts-profiles-{run_id}-calibration"
+    experiment.write_profile_configmap(configmap, "")
+    scheduler = experiment.configure_scheduler(
+        "calibrate", seed, configmap, f"/data/profiles-{run_id}-calibration.json")
+    bodies = calibration_bodies(templates, workers, run_id)
+    started = utc_now()
+    for body in bodies:
+        experiment.create_workflow(body)
+    names = [body["metadata"]["name"] for body in bodies]
+    experiment.wait_for_workflows(names)
+    workflows = [experiment.collect_workflow(name) for name in names]
+    events = experiment.scheduler_events(f"{EXPERIMENT_PREFIX}cal-")
+    deadline = time.monotonic() + 60
+    profiles = ""
+    while time.monotonic() < deadline:
+        time.sleep(6)
+        profiles = experiment.read_profile_configmap(configmap)
+        if profiles and all(template in profiles for template in templates):
+            break
+    if not profiles:
+        raise RuntimeError("calibration profile was not persisted")
+    return {
+        "started_at": started,
+        "finished_at": utc_now(),
+        "scheduler": scheduler,
+        "workflows": workflows,
+        "scheduler_events": events,
+        "profiles_json": profiles,
+    }
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--policies", nargs="+", default=["legacy-v1", "adaptive"],
-        choices=SUPPORTED_POLICIES)
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--profile", required=True,
+                        help="Kind profile name from clusters/kind_profiles.yaml")
+    parser.add_argument("--policies", nargs="+", default=list(SUPPORTED_POLICIES),
+                        choices=SUPPORTED_POLICIES)
+    parser.add_argument("--batches", nargs="+", default=["priority", "dag"])
     parser.add_argument("--repetitions", type=int, default=3)
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument(
-        "--topology-name",
-        default="unspecified",
-        help="stable label for the Kind or physical cluster topology",
-    )
+    parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--namespace", default="default")
-    parser.add_argument("--timeout-seconds", type=float, default=600)
-    parser.add_argument("--priority-delay-seconds", type=float, default=7)
-    parser.add_argument(
-        "--templates", default="experiments/k8s/tasktemplates.yaml")
-    parser.add_argument(
-        "--output", default="results/k8s-kind/policy-comparison.json")
-    parser.add_argument("--keep-workflows", action="store_true")
+    parser.add_argument("--timeout-seconds", type=float, default=900)
+    parser.add_argument("--templates", default="experiments/k8s/tasktemplates.yaml")
+    parser.add_argument("--batch-file", default="experiments/k8s/batches.yaml")
+    parser.add_argument("--output", required=True)
     args = parser.parse_args()
     if args.repetitions < 1:
         parser.error("--repetitions must be at least 1")
 
-    run_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    batches = load_batches(args.batch_file)
+    for batch in args.batches:
+        if batch not in batches["batches"]:
+            parser.error(f"unknown batch {batch!r}")
+    run_id = datetime.now(timezone.utc).strftime("%m%d%H%M%S")
     experiment = KubernetesExperiment(args.namespace, args.timeout_seconds)
-    experiment.apply_tasktemplates(args.templates)
+    templates = experiment.apply_tasktemplates(args.templates)
     experiment.clean_experiment_objects()
+    experiment.refresh_bandwidth()
+    schedule = trial_schedule(args.batches, args.policies, args.repetitions, args.seed)
     document = {
-        "schema_version": 1,
+        "schema_version": 2,
         "experiment": EXPERIMENT_NAME,
+        "profile": args.profile,
         "run_id": run_id,
-        "started_at": utc_now(),
-        "completed_at": None,
         "seed": args.seed,
         "repetitions": args.repetitions,
-        "priority_delay_seconds": args.priority_delay_seconds,
-        "topology_name": args.topology_name,
+        "policies": args.policies,
+        "batches": args.batches,
+        "batch_definitions": {name: batches["batches"][name] for name in args.batches},
+        "priority_delay_seconds": batches.get("priority_delay_s", 0),
+        "templates": templates,
+        "schedule": [list(item) for item in schedule],
+        "started_at": utc_now(),
+        "completed_at": None,
         "cluster": experiment.cluster_metadata(),
-        "policies": {},
-        "summary": {},
+        "calibration": None,
+        "trials": [],
     }
     write_results(args.output, document)
 
     try:
-        for policy in args.policies:
-            document["policies"][policy] = {
-                "scheduler_runs": [],
-                "trials": [],
-            }
-        for repetition in range(1, args.repetitions + 1):
-            for policy in policy_order_for_repetition(
-                    args.policies, repetition):
-                experiment.clean_experiment_objects()
-                scheduler = experiment.configure_scheduler(
-                    policy, args.seed, run_id)
-                policy_result = document["policies"][policy]
-                policy_result["scheduler_runs"].append({
-                    "repetition": repetition,
-                    **scheduler,
-                })
-                trial = run_trial(
-                    experiment, policy, repetition, run_id,
-                    args.priority_delay_seconds)
-                policy_result["trials"].append(trial)
-                write_results(args.output, document)
-                time.sleep(6)
-        for policy in args.policies:
-            policy_result = document["policies"][policy]
-            policy_result["summary"] = summarize_policy(
-                policy_result["trials"])
-            document["summary"][policy] = policy_result["summary"]
+        workers = len(experiment.worker_nodes())
+        document["calibration"] = calibrate(
+            experiment, templates, run_id, args.seed, workers)
+        write_results(args.output, document)
+        warm_profiles = document["calibration"]["profiles_json"]
+        experiment.clean_experiment_objects()
+        for index, (repetition, batch, policy) in enumerate(schedule, start=1):
+            trial_id = f"t{index:03d}"
+            configmap = f"ts-profiles-{run_id}-{trial_id}"
+            experiment.write_profile_configmap(configmap, warm_profiles)
+            scheduler = experiment.configure_scheduler(
+                policy, args.seed, configmap, f"/data/profiles-{run_id}-{trial_id}.json")
+            bodies = batch_bodies(batches, batch, run_id, trial_id, policy)
+            started, workflows = run_workflows(
+                experiment, bodies, float(batches.get("priority_delay_s", 0)))
+            events = experiment.scheduler_events(f"{EXPERIMENT_PREFIX}{trial_id}-")
+            document["trials"].append({
+                "trial_id": trial_id,
+                "repetition": repetition,
+                "batch": batch,
+                "policy": policy,
+                "started_at": started,
+                "finished_at": utc_now(),
+                "scheduler": scheduler,
+                "scheduler_events": events,
+                "preemptions": len(events["preemptions"]),
+                "workflows": workflows,
+                **trial_summary(workflows),
+            })
             write_results(args.output, document)
+            experiment.clean_experiment_objects()
+            print(f"[{index}/{len(schedule)}] {batch}/{policy} rep {repetition}: "
+                  f"makespan={document['trials'][-1]['makespan_seconds']:.2f}s "
+                  f"mean_response={document['trials'][-1]['mean_response_seconds']:.2f}s "
+                  f"preemptions={len(events['preemptions'])}", flush=True)
         document["completed_at"] = utc_now()
         write_results(args.output, document)
     except Exception as exc:
@@ -707,18 +754,6 @@ def main():
         document["completed_at"] = utc_now()
         write_results(args.output, document)
         raise
-    finally:
-        if not args.keep_workflows:
-            experiment.clean_experiment_objects()
-
-    for policy in args.policies:
-        summary = document["summary"][policy]
-        print(
-            f"{policy}: completion={summary['completion_rate']:.0%}, "
-            f"median_response={summary['median_workflow_response_seconds']:.2f}s, "
-            f"critical={summary['median_critical_response_seconds']:.2f}s, "
-            f"makespan={summary['median_trial_makespan_seconds']:.2f}s, "
-            f"preemptions={summary['preemptions']}")
     print(f"Wrote {args.output}")
 
 

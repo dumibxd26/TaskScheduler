@@ -230,23 +230,36 @@ if __name__ == "__main__":
             )
             task.state = TaskState.RUNNING
 
-            # 4. Block until pod completes — returns (startup_seconds, runtime_seconds)
-            actual_startup, actual_runtime = wait_for_pod_completion(v1, pod_name)
-
-            # 5. Unregister task from node tracker (it's done)
-            chosen_node.unregister_task(task.task_instance_id)
+            # 4. Block until pod completes — returns (startup_seconds, runtime_seconds).
+            #    Capacity is released on success and on failure alike.
+            node_cpu_at_start = chosen_node.cpu_usage_ratio
+            node_memory_at_start = chosen_node.memory_usage_ratio
+            try:
+                actual_startup, actual_runtime = wait_for_pod_completion(v1, pod_name)
+            except RuntimeError as failure:
+                print(f"[K8S] {failure}")
+                observer.record_task_failure(
+                    task, node_id=chosen_node.node_id,
+                    node_type=chosen_node.node_type, reason=str(failure))
+                continue
+            finally:
+                # 5. Unregister task from node tracker (it's done or failed)
+                chosen_node.unregister_task(task.task_instance_id)
 
             # 6. Update the learning profile
             observer.record_task_completion(
                 task, actual_runtime=actual_runtime, actual_startup=actual_startup,
                 node_id=chosen_node.node_id, node_type=chosen_node.node_type,
-                node_cpu_at_start=chosen_node.cpu_usage_ratio,
-                node_memory_at_start=chosen_node.memory_usage_ratio,
+                node_cpu_at_start=node_cpu_at_start,
+                node_memory_at_start=node_memory_at_start,
             )
 
         if all(t.state == TaskState.FINISHED for t in my_workflow.task_instances.values()):
             my_workflow.state = WorkflowState.FINISHED
             print(f"\n=== WORKFLOW {wf_id} COMPLETE ===")
+            break
+        if resolver.check_workflow_terminal(my_workflow):
+            print(f"\n=== WORKFLOW {wf_id} ended {my_workflow.state.name} ===")
             break
 
         time.sleep(1)  # brief pause before next DAG resolution tick

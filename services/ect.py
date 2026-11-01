@@ -224,10 +224,11 @@ def workflow_ect(wf: WorkflowInstance, wf_tmpl: WorkflowTemplate,
         finish[task_id] = ft
         return ft
 
-    # The workflow ECT is the max of all leaf-task finish times.
-    all_children = {e.child_task_id for e in wf_tmpl.edges}
+    # The workflow ECT is the max of all leaf-task (sink) finish times; a sink
+    # is a task that is never the parent of an edge.
+    all_parents = {e.parent_task_id for e in wf_tmpl.edges}
     all_tasks = set(wf_tmpl.tasks.keys())
-    leaves = all_tasks - all_children if all_children else all_tasks
+    leaves = all_tasks - all_parents
     if not leaves:
         leaves = all_tasks
     return max((_finish(tid) for tid in leaves), default=now)
